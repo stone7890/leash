@@ -89,11 +89,12 @@ func run(ctx context.Context) error {
 		mints[n] = indexer.MintConfig{Address: m.Address, Program: m.ProgramID}
 	}
 	ix := indexer.New(st, adapter, indexer.Options{
-		Pool:          pool,
-		InternalToken: os.Getenv("INTERNAL_TOKEN"),
-		SignerURL:     envOr("SIGNER_BASE_URL", "http://signer:4100"),
-		DemoURL:       cfg.DemoEndpointURL,
-		Mints:         mints,
+		Pool:           pool,
+		InternalToken:  os.Getenv("INTERNAL_TOKEN"),
+		SignerURL:      envOr("SIGNER_BASE_URL", "http://signer:4100"),
+		DemoURL:        cfg.DemoEndpointURL,
+		Mints:          mints,
+		AbandonedAfter: cfg.AbandonedAfter,
 	})
 	sup := jobs.Start(ctx, ix.Jobs(cfg.Networks,
 		cfg.AllowanceRefresh, cfg.PaymentSweep, cfg.AlertEval, cfg.FaucetGuard))

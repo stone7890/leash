@@ -20,7 +20,11 @@ type Event = {
   detail?: Record<string, unknown>;
 };
 
-export function HandshakeLog({ paymentId }: { paymentId: string }) {
+export function HandshakeLog({ paymentId, onDone }: {
+  paymentId: string;
+  // Called once the stream closes, so a caller showing figures beside the log can re-read them.
+  onDone?: () => void;
+}) {
   const [events, setEvents] = useState<Event[]>([]);
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -37,7 +41,7 @@ export function HandshakeLog({ paymentId }: { paymentId: string }) {
       } catch { /* a malformed frame is not worth breaking the wizard over */ }
     });
 
-    source.addEventListener("done", () => { setDone(true); source.close(); });
+    source.addEventListener("done", () => { setDone(true); source.close(); onDone?.(); });
 
     source.onerror = () => {
       // The stream is a convenience, not the record. If it drops, the timeline endpoint still has

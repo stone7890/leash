@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { paymentResponse } from "@/lib/api/shapes";
 import { requireOwner, unauthenticated, json, fail, Unauthenticated } from "@/lib/auth/require";
 import { listPayments } from "@/lib/store/queries";
 import type { Network } from "@/lib/domain/state";
@@ -13,7 +14,8 @@ export async function GET(req: NextRequest) {
       return fail("INVALID_NETWORK", "network must be sandbox or mainnet", 422);
     }
     const agentId = req.nextUrl.searchParams.get("agent") ?? undefined;
-    return json(await listPayments(caller.org, raw as Network, { agentId, limit: 100 }));
+    return json((await listPayments(caller.org, raw as Network, { agentId, limit: 100 }))
+      .map(paymentResponse));
   } catch (e) {
     if (e instanceof Unauthenticated) return unauthenticated();
     throw e;

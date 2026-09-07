@@ -252,6 +252,11 @@ type Indexer struct {
 	AlertEval        time.Duration
 	FaucetGuard      time.Duration
 
+	// How long a payment with no trace on chain stays `unknown` before the sweep calls it failed
+	// and gives its reservation back. Per network, like every other setting whose right answer
+	// differs between play money and real money.
+	AbandonedAfter map[network.Network]time.Duration
+
 	AlertsEnabled bool
 	TelegramToken string
 
@@ -276,11 +281,34 @@ func LoadIndexer() (Indexer, error) {
 		i.TelegramToken = l.requireFor("TELEGRAM_BOT_TOKEN", "ALERTS_ENABLED is true")
 	}
 
+	// A day on mainnet, ten minutes on the sandbox. The asymmetry is the point: on mainnet a
+	// premature `failed` releases budget for money that may still move, which is how one challenge
+	// gets paid twice; on the sandbox the same caution leaves a demo holding a cent until tomorrow
+	// over a transaction nobody will ever submit.
+	//
+	// Two variables rather than one, because a single global spanning both networks is the shape
+	// this codebase refuses everywhere else — see "There is no RPC_URL".
+	i.AbandonedAfter = map[network.Network]time.Duration{
+		network.Sandbox: l.duration("PAYMENT_ABANDONED_AFTER_SANDBOX", "10m"),
+		network.Mainnet: l.duration("PAYMENT_ABANDONED_AFTER_MAINNET", "24h"),
+	}
+
 	i.FaucetPerWalletPerHour = l.intVal("FAUCET_PER_WALLET_PER_HOUR", 1)
 	i.DemoEndpointURL = l.optional("DEMO_ENDPOINT_URL", "http://localhost:4200")
 
 	if err := l.err("leash-indexer"); err != nil {
 		return Indexer{}, err
+	}
+	// The sweep only looks at payments older than 90 seconds, so anything near that would call a
+	// payment abandoned at the first glance it ever gets — before a healthy transaction has had
+	// time to confirm. Two minutes is the floor at which the setting still means what it says.
+	for n, d := range i.AbandonedAfter {
+		if d < 2*time.Minute {
+			return Indexer{}, fmt.Errorf(
+				"leash-indexer cannot start: the %s abandon window is %s. The sweep does not look "+
+					"at a payment until it is 90s old, so anything under 2m calls a payment "+
+					"abandoned at its first check", n, d)
+		}
 	}
 	if i.AlertEval > 30*time.Second {
 		return Indexer{}, fmt.Errorf(

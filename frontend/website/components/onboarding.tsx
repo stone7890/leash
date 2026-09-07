@@ -14,7 +14,7 @@ import type { Tier } from "@/lib/domain/state";
 
 type Template = {
   id: string; name: string; description: string;
-  cap: string; perTxMax: string; velocityMax: string;
+  cap: string; perTxMax: string; velocityMax: string; velocityWindowS: number;
   expiryDays: number; allowHosts: string[];
 };
 
@@ -49,6 +49,12 @@ export function Onboarding({ templates, demoHost }:
   const [runsAs, setRunsAs] = useState("cli");
   const [cap, setCap] = useState(templates[0]?.cap ?? "10.000000");
   const [expiryDays, setExpiryDays] = useState(7);
+  // The two signer-tier limits. They were the template's and nothing else's, so the only way to
+  // want a different per-payment maximum was to pick a different template — or to create the agent
+  // and change it afterwards on a screen the wizard never mentions.
+  const [perTxMax, setPerTxMax] = useState(templates[0]?.perTxMax ?? "0.050000");
+  const [velocityMax, setVelocityMax] = useState(templates[0]?.velocityMax ?? "0.500000");
+  const [velocityWindowS, setVelocityWindowS] = useState(templates[0]?.velocityWindowS ?? 600);
   const [hosts, setHosts] = useState<string[]>(
     templates[0]?.allowHosts ? [...templates[0].allowHosts, demoHost] : [demoHost]);
   const [hostDraft, setHostDraft] = useState("");
@@ -149,6 +155,9 @@ export function Onboarding({ templates, demoHost }:
     setCap(t.cap);
     setHosts(withDemo(t.allowHosts));
     setExpiryDays(t.expiryDays);
+    setPerTxMax(t.perTxMax);
+    setVelocityMax(t.velocityMax);
+    setVelocityWindowS(t.velocityWindowS);
   }, [withDemo]);
 
   async function createAgent() {
@@ -160,6 +169,8 @@ export function Onboarding({ templates, demoHost }:
         body: JSON.stringify({
           name, template_id: template, network: "sandbox", runs_as: runsAs,
           cap, allow_hosts: hosts, allow_all: allowAll, expiry_days: expiryDays,
+          per_tx_max: perTxMax.trim(), velocity_max: velocityMax.trim(),
+          velocity_window_s: Number(velocityWindowS),
         }),
       });
       const body = await res.json();
@@ -312,6 +323,36 @@ export function Onboarding({ templates, demoHost }:
                 rule and the badge says so. I3 does not permit claiming otherwise. */}
             <p className="mt-1 text-xs text-mut">
               Expiry is checked by the Leash signer. The cap is enforced by Solana itself.
+            </p>
+          </Field>
+
+          <Field label="Per-payment max" badge={<TierBadge tier="signer" />}>
+            {/* text, never number — the same reason as the cap: an amount that has been through a
+                JavaScript double is not an amount (I6). */}
+            <input type="text" inputMode="decimal" value={perTxMax}
+                   onChange={(e) => setPerTxMax(e.target.value)} className={inputCls} />
+            <p className="mt-1 text-xs text-mut">
+              One payment may be this large, and no larger. Rule S3.
+            </p>
+          </Field>
+
+          <Field label="Spending limit per window" badge={<TierBadge tier="signer" />}>
+            <div className="flex gap-2">
+              <input type="text" inputMode="decimal" value={velocityMax}
+                     onChange={(e) => setVelocityMax(e.target.value)} className={inputCls} />
+              <select value={velocityWindowS}
+                      onChange={(e) => setVelocityWindowS(Number(e.target.value))}
+                      className={`${inputCls} max-w-[9rem]`}>
+                <option value={60}>per minute</option>
+                <option value={600}>per 10 minutes</option>
+                <option value={3600}>per hour</option>
+                <option value={86400}>per day</option>
+              </select>
+            </div>
+            <p className="mt-1 text-xs text-mut">
+              Everything paid inside the window, added up. Rule S4 — and it is the database that
+              enforces it, in the same operation that reserves the money, so two payments at once
+              cannot both slip through.
             </p>
           </Field>
 

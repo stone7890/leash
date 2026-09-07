@@ -6,6 +6,7 @@ import {
 } from "@/lib/store/writes";
 import { provisionAgentKey, ServiceError } from "@/lib/services";
 import { parseMoney } from "@/lib/domain/money";
+import { agentResponse, allowanceResponse, policyResponse } from "@/lib/api/shapes";
 import type { Network } from "@/lib/domain/state";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,9 @@ export async function GET(req: NextRequest) {
 
     const agents = await listAgents(caller.org, network);
     const withState = await Promise.all(agents.map(async (a) => ({
-      ...a,
-      policy: await getPolicy(a.id),
-      allowance: await liveAllowance(a.id),
+      ...agentResponse(a),
+      policy: policyResponse(await getPolicy(a.id)),
+      allowance: allowanceResponse(await liveAllowance(a.id)),
     })));
     return json(withState);
   } catch (e) {
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => null)) as {
       name?: string; template_id?: string; network?: string; runs_as?: string;
-      cap?: string; per_tx_max?: string; velocity_max?: string;
+      cap?: string; per_tx_max?: string; velocity_max?: string; velocity_window_s?: number;
       allow_hosts?: string[]; allow_all?: boolean; expiry_days?: number;
     } | null;
     if (!body?.name?.trim()) {
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
       if (!agent) return fail("IDEMPOTENCY_CONFLICT", "that key was used by another workspace", 409);
       // The API key is NOT replayed: it was shown once, and showing it again would make "once"
       // untrue for anybody who saw the first response.
-      return json({ ...agent, api_key: null, replayed: true });
+      return json({ ...agentResponse(agent), api_key: null, replayed: true });
     }
 
     const templates = await listTemplates();
@@ -94,6 +95,27 @@ export async function POST(req: NextRequest) {
         { field: "cap" });
     }
 
+    // The window is the velocity rule's other half, and it was previously fixed at whatever the
+    // template said — so an owner could ask for "$1" without being able to say "per how long".
+    let velocityWindowS = template.prefills.velocityWindowS;
+    if (body.velocity_window_s !== undefined) {
+      velocityWindowS = Number(body.velocity_window_s);
+      // The schema's own bounds, answered as a sentence rather than as a rejected write.
+      if (!Number.isInteger(velocityWindowS) || velocityWindowS < 1 || velocityWindowS > 86_400) {
+        return fail("INVALID_WINDOW", "the window must be a whole number of seconds between 1 " +
+          "and 86400 (24 hours)", 422, { field: "velocity_window_s" });
+      }
+    }
+
+    // The same rule PATCH /policy enforces, for the same reason: a per-payment maximum above the
+    // window's limit reads as permission the window will refuse. Creating an agent that way would
+    // only move the confusion to its first payment.
+    if (perTxMax > velocityMax) {
+      return fail("INVALID_AMOUNT",
+        "the per-payment maximum cannot exceed the limit for the whole window — the window would " +
+        "refuse the payment the per-payment maximum just allowed", 422, { field: "per_tx_max" });
+    }
+
     const allowHosts = (body.allow_hosts ?? template.prefills.allowHosts)
       .map((h) => h.trim().toLowerCase())
       .filter((h) => h.length > 0 && h !== "*");
@@ -107,8 +129,7 @@ export async function POST(req: NextRequest) {
       runsAs: body.runs_as ?? "cli",
       idempotencyKey,
       policy: {
-        allowHosts, allowAll, perTxMax, velocityMax,
-        velocityWindowS: template.prefills.velocityWindowS,
+        allowHosts, allowAll, perTxMax, velocityMax, velocityWindowS,
       },
     });
 
@@ -124,8 +145,15 @@ export async function POST(req: NextRequest) {
     await attachPubkey(agentId, key.pubkey);
 
     const agent = await getAgent(caller.org, agentId);
+    // Read back rather than asserted. It was written in a transaction a moment ago, so this
+    // cannot normally be null — and if it ever is, the API key has already been minted and
+    // returning it beside a half-made agent is the one outcome worth refusing outright.
+    if (!agent) {
+      return fail("INTERNAL", "the agent was created but could not be read back", 500,
+        { retriable: true });
+    }
     return json({
-      ...agent,
+      ...agentResponse(agent),
       // Once. The database stores a hash, so it cannot be shown again even by us.
       api_key: key.api_key,
       cap: cap,

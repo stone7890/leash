@@ -136,8 +136,11 @@ one challenge gets paid twice.
 - **Only the indexer may write `confirmed`, and only with a slot.** This is a schema constraint,
   not a convention: `handshake_events` refuses a `confirmed` row whose `writer` is not `indexer`
   or whose `read_back_slot` is missing.
-- `payment-sweep` re-checks by signature on a cadence, for as long as it takes. Past 24 hours
-  with no trace it becomes `failed`, with an alert.
+- `payment-sweep` re-checks by signature on a cadence, for as long as it takes. Past the network's
+  abandon window with no trace it becomes `failed`, with an alert — a day on mainnet, where a
+  premature `failed` would release budget for money that may still move, and ten minutes on the
+  sandbox, where the same patience only holds a demo's cent hostage
+  (`PAYMENT_ABANDONED_AFTER_SANDBOX` · `PAYMENT_ABANDONED_AFTER_MAINNET`, minimum 2m).
 - `verify-architecture` asserts the sweep package never calls a signing function.
 - The interface has a dedicated `unknown` presentation, and the copy is fixed:
   > This payment timed out before we saw a result. It is neither failed nor confirmed — we keep

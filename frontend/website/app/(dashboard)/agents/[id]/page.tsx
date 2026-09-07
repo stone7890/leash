@@ -5,6 +5,10 @@ import { formatShort, remaining } from "@/lib/domain/money";
 import { AllowancePill, PaymentPill, TierBadge } from "@/components/pills";
 import { BudgetBar } from "@/components/budget-bar";
 import { KillSwitch } from "@/components/kill-switch";
+import { PolicyLimits } from "@/components/policy-limits";
+import { SimulatePayment } from "@/components/simulate-payment";
+import { demoHost } from "@/lib/demo-host";
+import { formatMoney } from "@/lib/domain/money";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +73,8 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             </p>
             <dl className="mono space-y-1 text-xs">
               <Row k="Per-payment max" v={policy ? `$${formatShort(policy.perTxMax)}` : "—"} />
-              <Row k="10-minute limit" v={policy ? `$${formatShort(policy.velocityMax)}` : "—"} />
+              <Row k={`${policy ? policy.velocityWindowS / 60 : 10}-minute limit`}
+                   v={policy ? `$${formatShort(policy.velocityMax)}` : "—"} />
               {/* The expiry tier comes from the allowance, not a constant. Under the SPL delegate
                   it is signer-enforced, and saying otherwise would break invariant I3. */}
               <Row k={`Expires (${allowance.expiryTier})`}
@@ -90,8 +95,20 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
                 ))
               )}
             </div>
+            {policy && (
+              <PolicyLimits agentId={agent.id}
+                            perTxMax={formatMoney(policy.perTxMax)}
+                            velocityMax={formatMoney(policy.velocityMax)}
+                            velocityWindowS={policy.velocityWindowS} />
+            )}
           </div>
         </section>
+      )}
+
+      {/* Sandbox only. A "test" payment on mainnet would spend real money, which is why the
+          endpoint behind this refuses one — nonsensical rather than forbidden. */}
+      {agent.network === "sandbox" && (
+        <SimulatePayment agentId={agent.id} host={demoHost()} />
       )}
 
       <section>

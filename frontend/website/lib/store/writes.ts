@@ -1,6 +1,6 @@
 import "server-only";
 import type { ClientSession } from "mongodb";
-import { client, db, toLong } from "./db";
+import { client, db, toBig, toLong } from "./db";
 import type { Network, Tier } from "@/lib/domain/state";
 
 // The writes the dashboard performs. Reads live in queries.ts.
@@ -200,6 +200,80 @@ export async function addAllowedHost(agentId: string, host: string, actor: strin
   } finally {
     await session.endSession();
   }
+}
+
+/**
+ * Change the two signer-tier limits: the per-payment maximum and the velocity window.
+ *
+ * Written the same way a host is added — the policy and its revision in ONE transaction — because
+ * the collection is called `policies` and the audit trail beside it is called `policy_revisions`
+ * for a reason: a limit that changed with no record of who changed it is the gap that matters most
+ * on the screen an owner reaches for after something went wrong.
+ *
+ * The revision records the OLD and the NEW value. A change entry that says only "per_tx_max: 0.05"
+ * cannot answer "what was it before", which is the question actually asked when a payment that
+ * used to pass starts failing.
+ */
+export async function updatePolicyLimits(
+  agentId: string,
+  next: { perTxMax: bigint; velocityMax: bigint; velocityWindowS: number },
+  actor: string,
+) {
+  const d = await db();
+  const now = new Date();
+  const before = await d.collection("policies").findOne({ _id: agentId as never });
+  if (!before) return false;
+
+  // toBig, not a local reader: it THROWS on a value that arrived as a JavaScript number, because
+  // that means money has already lost precision and rounding it into place would destroy the
+  // evidence. A quieter conversion here would be the one place in the app that hides it.
+  const change: Record<string, unknown> = {};
+  if (toBig(before.per_tx_max_base) !== next.perTxMax) {
+    change.per_tx_max_base = {
+      from: toLong(toBig(before.per_tx_max_base)), to: toLong(next.perTxMax),
+    };
+  }
+  if (toBig(before.velocity_max_base) !== next.velocityMax) {
+    change.velocity_max_base = {
+      from: toLong(toBig(before.velocity_max_base)), to: toLong(next.velocityMax),
+    };
+  }
+  if (Number(before.velocity_window_s) !== next.velocityWindowS) {
+    change.velocity_window_s = { from: Number(before.velocity_window_s), to: next.velocityWindowS };
+  }
+  // Nothing actually changed. A revision here would be a row saying somebody pressed Save, which
+  // is not what this trail is for.
+  if (Object.keys(change).length === 0) return true;
+
+  const session = (await client()).startSession();
+  try {
+    await session.withTransaction(async () => {
+      await d.collection("policies").updateOne(
+        { _id: agentId as never },
+        {
+          // toLong for the same reason createAgent uses it: the validator wants a BSON long, and
+          // money in this codebase reaches MongoDB one way only.
+          $set: {
+            per_tx_max_base: toLong(next.perTxMax),
+            velocity_max_base: toLong(next.velocityMax),
+            velocity_window_s: next.velocityWindowS,
+            updated_at: now,
+          },
+        },
+        { session },
+      );
+      await d.collection("policy_revisions").insertOne({
+        _id: newId("rev") as never,
+        agent_id: agentId,
+        change,
+        actor,
+        at: now,
+      }, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+  return true;
 }
 
 /**

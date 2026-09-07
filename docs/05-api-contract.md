@@ -22,7 +22,10 @@ borrows its discipline from, the version is in the path — because an agent SDK
 process is a client we do not control and cannot ask to redeploy.
 
 **Field names are `snake_case`.** Successful responses are the bare resource; there is no success
-envelope. Errors always have one.
+envelope. Errors always have one. The store layer speaks the app's own camelCase types and
+`lib/api/shapes.ts` is the one place they become wire names — handing a query result straight to
+the serialiser is how `perTxMax` and `readBackSlot` once reached callers who were promised
+`per_tx_max` and `read_back_slot`.
 
 **Money is a string, in both directions.** `"7.420000"`, always six decimal places.
 `{"amount":"0.31"}` is accepted and `{"amount":0.31}` is rejected with `INVALID_AMOUNT`, because
@@ -177,10 +180,18 @@ GET  /v1/agents?network=sandbox&cursor=…                             owner   2
 creation and can never change** (I8) — it becomes part of the agent's identifier. Creating an
 agent generates its keypair inside the signer, wraps it with KMS, and returns the API key **once**.
 
+The template supplies every limit; each one can be overridden in the body, and the same two rules
+`PATCH /v1/agents/{id}/policy` applies hold here — `velocity_window_s` is 1 to 86400 seconds, and a
+per-payment maximum above the window's own limit is a `422` rather than an agent whose first
+payment contradicts the screen that created it.
+
 ```jsonc
-// request
+// request — everything but `name` is optional; the template fills the rest
 { "name": "research-bot-01", "template_id": "research", "network": "sandbox",
-  "runs_as": "mcp" }
+  "runs_as": "mcp",
+  "cap": "10.000000", "expiry_days": 7,
+  "per_tx_max": "0.250000", "velocity_max": "1.000000", "velocity_window_s": 600,
+  "allow_hosts": ["api.exa.ai"] }
 
 // response — api_key appears exactly once, here
 { "id": "agt_test_01J8XK…", "name": "research-bot-01", "network": "sandbox",
@@ -239,13 +250,25 @@ PATCH /v1/agents/{id}/policy                                         owner   200
 PATCH /v1/agents/{id}/policy/allow-hosts                             owner   200
 ```
 
-The first replaces the whole soft-tier policy. The second **adds exactly one host** and is the
+The first changes the two signer-tier limits. The second **adds exactly one host** and is the
 endpoint behind the one-tap recovery button in the payment drawer.
 
 ```jsonc
+// PATCH /v1/agents/{id}/policy — every field optional; absent means unchanged
+{ "per_tx_max": "0.250000", "velocity_max": "1.000000", "velocity_window_s": 600 }
+
 // PATCH /v1/agents/{id}/policy/allow-hosts
 { "host": "api.unknown.xyz" }
 ```
+
+Absent is **unchanged**, not zero: a caller raising the per-payment maximum must not silently reset
+a velocity limit it never mentioned. `velocity_window_s` is a whole number of seconds from 1 to
+86400, and a per-payment maximum above the window's own limit is a `422` — it would read as "up to
+$1 a payment" on a screen where the window makes $0.50 the real answer.
+
+It does **not** touch the cap or the expiry. Those are the on-chain delegation: moving them takes a
+transaction the owner signs in their wallet, and offering them here would put a signer-tier promise
+on numbers the interface calls enforced by Solana.
 
 Both write a `policy_revisions` row in the same transaction as the change, so the audit row and
 the change land together or not at all.
@@ -255,8 +278,11 @@ domain, or a list is a `422`. The trap the deck names for flow P3 is a recovery 
 quietly widens the allow-list beyond the host that was actually blocked, and the server is where
 that has to be prevented — the button is not the only caller.
 
-Policy changes take effect **from the next payment**, never retroactively. The interface says so:
-*"Rules saved. In effect from the next payment."*
+Policy changes take effect **from the next payment**, never retroactively — and not instantly: the
+signer holds a snapshot of the agent for up to 60 seconds, and its change stream watches kills,
+revocations and key rotations, not policies. So a saved limit binds on the first payment after that
+snapshot expires, and the interface says exactly that rather than promising immediacy the cache
+does not deliver.
 
 ### Keys
 

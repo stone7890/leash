@@ -1,6 +1,7 @@
 import { listTemplates } from "@/lib/store/queries";
 import { currentSession } from "@/lib/auth/session";
 import { Onboarding } from "@/components/onboarding";
+import { demoHost } from "@/lib/demo-host";
 
 export const dynamic = "force-dynamic";
 
@@ -20,27 +21,12 @@ export default async function OnboardingPage() {
         cap: fmt(t.prefills.cap),
         perTxMax: fmt(t.prefills.perTxMax),
         velocityMax: fmt(t.prefills.velocityMax),
+        velocityWindowS: t.prefills.velocityWindowS,
         expiryDays: t.prefills.expiryDays,
         allowHosts: t.prefills.allowHosts,
       }))}
     />
   );
-}
-
-// The sample endpoint's host, as the SIGNER will see it.
-//
-// Step 5 pays this endpoint for real, and S2 compares the host of that request against the agent's
-// allow list — so an agent created from a template that does not name it is refused by its own
-// onboarding, correctly, at the last step. The host is deployment-specific (`demo402:4200` under
-// compose, `localhost:4200` in development), which is why it comes from the environment rather
-// than a constant in the template seeds.
-function demoHost(): string {
-  const raw = process.env.DEMO_ENDPOINT_URL || "http://demo402:4200";
-  try {
-    return new URL(raw).host;
-  } catch {
-    return raw.replace(/^https?:\/\//, "");
-  }
 }
 
 // Money crosses to the client as a STRING, always. A bigint cannot be serialised into props, and

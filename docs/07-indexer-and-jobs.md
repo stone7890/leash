@@ -95,8 +95,9 @@ The forbidden repair for a stuck payment is to sign it again; the only repair is
 - **`signed`** — the signer produced a signature. The money has not moved.
 - **`submitted`** — we have seen the transaction on the network, unconfirmed.
 - **`confirmed`** — read back by signature, at a named slot. Terminal.
-- **`failed`** — 24 hours with no trace of the signature anywhere. Terminal, and it raises an
-  alert, because a signature that never landed is worth a human look.
+- **`failed`** — a whole abandon window with no trace of the signature anywhere: 24 hours on
+  mainnet, 10 minutes on the sandbox, set per network by `PAYMENT_ABANDONED_AFTER_*`. Terminal, and
+  it raises an alert, because a signature that never landed is worth a human look.
 - **`unknown`** — we have not been able to determine the outcome. **Not a failure.** It holds its
   money in `reserved_base` and it is re-checked for as long as it takes.
 
@@ -185,7 +186,7 @@ for each payment in {signed, submitted, unknown} older than 90 seconds:
                    and in the SAME update: drawn += amount, reserved -= amount, last_read_slot
       seen       → state = submitted, write phase 5
       not found  → state = unknown, and re-check next cycle
-      not found, and older than 24 hours
+      not found, and older than the network's abandon window
                  → state = failed, reserved -= amount, raise an alert
 ```
 

@@ -1,5 +1,6 @@
 import { requireOwner, unauthenticated, json, fail, Unauthenticated } from "@/lib/auth/require";
 import { getAgent, getPolicy, liveAllowance, listPayments } from "@/lib/store/queries";
+import { agentResponse, allowanceResponse, paymentResponse, policyResponse } from "@/lib/api/shapes";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!agent) return fail("NOT_FOUND", "not found", 404);
 
     return json({
-      ...agent,
-      policy: await getPolicy(agent.id),
-      allowance: await liveAllowance(agent.id),
-      payments: await listPayments(caller.org, agent.network, { agentId: agent.id, limit: 50 }),
+      ...agentResponse(agent),
+      policy: policyResponse(await getPolicy(agent.id)),
+      allowance: allowanceResponse(await liveAllowance(agent.id)),
+      payments: (await listPayments(caller.org, agent.network, { agentId: agent.id, limit: 50 }))
+        .map(paymentResponse),
     });
   } catch (e) {
     if (e instanceof Unauthenticated) return unauthenticated();

@@ -33,6 +33,10 @@ type Indexer struct {
 	signerURL     string
 	demoURL       string
 	mints         map[network.Network]MintConfig
+
+	// How long a payment with no trace on chain may stay `unknown`, PER NETWORK. Empty means the
+	// default below, so an Indexer built without it behaves as it always did.
+	abandoned map[network.Network]time.Duration
 }
 
 // MintConfig is a network's USDC mint and the token program that owns it. USDC is classic SPL
@@ -44,18 +48,19 @@ type MintConfig struct {
 }
 
 type Options struct {
-	Pool          *rpc.Pool
-	InternalToken string
-	SignerURL     string
-	DemoURL       string
-	Mints         map[network.Network]MintConfig
+	Pool           *rpc.Pool
+	InternalToken  string
+	SignerURL      string
+	DemoURL        string
+	Mints          map[network.Network]MintConfig
+	AbandonedAfter map[network.Network]time.Duration
 }
 
 func New(st *store.Store, a chain.Adapter, opts Options) *Indexer {
 	return &Indexer{
 		store: st, adapter: a, pool: opts.Pool,
 		internalToken: opts.InternalToken, signerURL: opts.SignerURL,
-		demoURL: opts.DemoURL, mints: opts.Mints,
+		demoURL: opts.DemoURL, mints: opts.Mints, abandoned: opts.AbandonedAfter,
 	}
 }
 
@@ -174,11 +179,27 @@ func (ix *Indexer) RefreshAllowances(ctx context.Context, n network.Network, now
 // payment confirming normally is not swept while it is perfectly healthy.
 const unresolvedFor = 90 * time.Second
 
-// abandonedAfter is when a signature with no trace anywhere becomes `failed`.
+// defaultAbandonedAfter is when a signature with no trace anywhere becomes `failed`.
 //
 // Deliberately long. A signature that has not landed in a day is genuinely gone, and shortening
 // this trades a real risk — freeing budget for money that later moves — against tidiness.
-const abandonedAfter = 24 * time.Hour
+//
+// It is the fallback, not the policy: the risk is not the same on every network, so the duration
+// is configured per network and this is what an Indexer built without one uses.
+const defaultAbandonedAfter = 24 * time.Hour
+
+// abandonedAfter is that duration for one network.
+//
+// Per network for the reason every other setting here is: on mainnet the money is real and a
+// premature `failed` releases budget for a payment that may still land — worth a day of patience.
+// On the sandbox the same patience makes a demo hold a cent hostage until tomorrow over a
+// transaction nobody will ever submit, and the money is play money by design.
+func (ix *Indexer) abandonedAfter(n network.Network) time.Duration {
+	if d, ok := ix.abandoned[n]; ok && d > 0 {
+		return d
+	}
+	return defaultAbandonedAfter
+}
 
 // SweepPayments is invariant I4, as a loop.
 //
@@ -220,10 +241,12 @@ func (ix *Indexer) SweepPayments(ctx context.Context, n network.Network, now tim
 				Writer: state.WriterIndexer, At: now,
 			})
 
-		case now.Sub(p.CreatedAt) > abandonedAfter:
-			// A day with no trace. Now it is failed, and it is worth a human look.
-			slog.Warn("a payment left no trace for 24 hours",
-				"network", n, "payment_id", p.ID, "signature", p.Signature)
+		case now.Sub(p.CreatedAt) > ix.abandonedAfter(n):
+			// No trace for the whole window this network allows. Now it is failed, and it is
+			// worth a human look.
+			slog.Warn("a payment left no trace and was abandoned",
+				"network", n, "payment_id", p.ID, "signature", p.Signature,
+				"after", ix.abandonedAfter(n))
 			_ = ix.store.SetPaymentState(ctx, n, p.ID, state.PaymentFailed, 0, now)
 			_ = ix.store.ReleaseReservation(ctx, n, p.AllowanceID, p.Amount)
 

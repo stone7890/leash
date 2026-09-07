@@ -266,6 +266,7 @@ from failing fast.
 | `ALLOWED_ORIGINS` | web | |
 | `BOOTSTRAP_FUND_SOL` | leashctl | Default 2. SOL wanted in each sandbox key |
 | `BOOTSTRAP_FUND_WAIT` | leashctl | Default 30m. How long bootstrap waits to be funded by hand on a public cluster; 0 exits instead |
+| `PAYMENT_ABANDONED_AFTER_SANDBOX` · `PAYMENT_ABANDONED_AFTER_MAINNET` | indexer | Default 10m and 24h. When a payment with no trace becomes `failed` and its reservation is released. Minimum 2m |
 | `FAUCET_PER_WALLET_PER_HOUR` | web, indexer | Default 1. The 429 on the sandbox faucet |
 | `LOG_LEVEL` | all | Default `info` |
 
