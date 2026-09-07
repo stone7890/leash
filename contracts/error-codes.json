@@ -1,0 +1,46 @@
+{
+  "$comment": "The frozen error-code table. A code is NEVER renamed and NEVER reused. Both runtimes are checked against this file: `leashctl verify-contracts` on the Go side, a Vitest suite on the TypeScript side. See docs/11-errors-and-codes.md.",
+  "version": 1,
+  "codes": [
+    { "code": "NETWORK_MISMATCH",              "status": 403, "retriable": false, "rule": "S0", "tier": "signer",  "group": "policy" },
+    { "code": "ALLOWANCE_INACTIVE",            "status": 403, "retriable": false, "rule": "S1", "tier": "onchain", "group": "policy" },
+    { "code": "ENDPOINT_NOT_ALLOWED",          "status": 403, "retriable": false, "rule": "S2", "tier": "signer",  "group": "policy" },
+    { "code": "PER_TX_LIMIT",                  "status": 403, "retriable": false, "rule": "S3", "tier": "signer",  "group": "policy" },
+    { "code": "VELOCITY_LIMIT",                "status": 403, "retriable": true,  "rule": "S4", "tier": "signer",  "group": "policy" },
+    { "code": "BUDGET_EXHAUSTED",              "status": 403, "retriable": false, "rule": "S5", "tier": "onchain", "group": "policy" },
+    { "code": "UNSUPPORTED_TERMS",             "status": 403, "retriable": false, "rule": "S6", "tier": "signer",  "group": "policy" },
+    { "code": "KILLED",                        "status": 403, "retriable": false, "rule": "S7", "tier": "signer",  "group": "policy" },
+
+    { "code": "INVALID_AMOUNT",                "status": 422, "retriable": false, "field": "amount",  "group": "validation" },
+    { "code": "INVALID_HOST",                  "status": 422, "retriable": false, "field": "host",    "group": "validation" },
+    { "code": "INVALID_WALLET",                "status": 422, "retriable": false, "field": "wallet",  "group": "validation" },
+    { "code": "INVALID_NETWORK",               "status": 422, "retriable": false, "field": "network", "group": "validation" },
+    { "code": "UNSUPPORTED_CHALLENGE_VERSION", "status": 422, "retriable": false, "group": "validation" },
+    { "code": "TOO_MANY_HOSTS",                "status": 422, "retriable": false, "field": "host",    "group": "validation" },
+    { "code": "MAINNET_ONLY_OPERATION",        "status": 422, "retriable": false, "group": "validation" },
+    { "code": "MISSING_IDEMPOTENCY_KEY",       "status": 400, "retriable": false, "group": "validation" },
+    { "code": "MALFORMED_REQUEST",             "status": 400, "retriable": false, "group": "validation" },
+
+    { "code": "IDEMPOTENCY_CONFLICT",          "status": 409, "retriable": false, "group": "conflict" },
+    { "code": "SIGN_IN_PROGRESS",              "status": 409, "retriable": true,  "group": "conflict" },
+    { "code": "ALLOWANCE_ALREADY_LIVE",        "status": 409, "retriable": false, "group": "conflict" },
+    { "code": "INTENT_EXPIRED",                "status": 409, "retriable": true,  "group": "conflict" },
+
+    { "code": "UNAUTHENTICATED",               "status": 401, "retriable": false, "group": "auth" },
+    { "code": "INVALID_SIGNATURE",             "status": 401, "retriable": false, "group": "auth" },
+    { "code": "NONCE_ALREADY_USED",            "status": 401, "retriable": false, "group": "auth" },
+    { "code": "NONCE_EXPIRED",                 "status": 401, "retriable": false, "group": "auth" },
+    { "code": "KEY_REVOKED",                   "status": 401, "retriable": false, "group": "auth" },
+    { "code": "FORBIDDEN",                     "status": 403, "retriable": false, "group": "auth" },
+
+    { "code": "NOT_FOUND",                     "status": 404, "retriable": false, "group": "store" },
+    { "code": "RATE_LIMITED",                  "status": 429, "retriable": true,  "group": "store" },
+    { "code": "CHAIN_UNREACHABLE",             "status": 503, "retriable": true,  "group": "chain" },
+    { "code": "STORE_UNAVAILABLE",             "status": 503, "retriable": true,  "group": "store" },
+    { "code": "INTERNAL",                      "status": 500, "retriable": false, "group": "internal" }
+  ],
+  "boot_codes": [
+    "CONFIG_MISSING", "CONFIG_INVALID", "CONFIG_HALF_CONFIGURED",
+    "MIGRATION_FAILED", "SCHEMA_ASSERTION_FAILED", "PRIVILEGE_ASSERTION_FAILED"
+  ]
+}

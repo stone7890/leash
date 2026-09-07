@@ -1,0 +1,23 @@
+{
+  "rule": "S7", "code": "KILLED",
+  "$comment": "S7 is soft immediately and hard once the on-chain revoke lands. The kill switch sets the flag the instant the owner confirms, before the transaction is even built, so the signer starts refusing while the wallet prompt is still open. The window between the two is the nature of the chain, not a bug — and the interface keeps saying `revoking…` until the read-back.",
+  "cases": [
+    { "name": "pass · a live agent",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a killed agent, with everything else in order",
+      "snapshot": { "agent": { "killed": true } },
+      "expect": { "verdict": "blocked", "failed_rule": "S7", "code": "KILLED", "tier": "signer" } },
+
+    { "name": "boundary · a killed agent whose allow-list ALSO refuses the host reports S2, not S7",
+      "$why": "Evaluation order is the contract. S2 comes first, so it wins. An SDK that branches on the code must get the same answer every time, and a killed agent must not mask a fixable configuration problem — or the reverse.",
+      "snapshot": { "agent": { "killed": true } },
+      "request": { "host": "api.unknown.xyz" },
+      "expect": { "verdict": "blocked", "failed_rule": "S2", "code": "ENDPOINT_NOT_ALLOWED" } },
+
+    { "name": "boundary · a killed agent that is ALSO over budget reports S5, not S7",
+      "snapshot": { "agent": { "killed": true },
+                    "allowance": { "cap": "10.000000", "drawn": "10.000000", "reserved": "0.000000" } },
+      "expect": { "verdict": "blocked", "failed_rule": "S5", "code": "BUDGET_EXHAUSTED" } }
+  ]
+}

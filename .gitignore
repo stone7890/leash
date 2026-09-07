@@ -1,0 +1,26 @@
+# secrets — never committed. CI greps for these.
+.env
+.env.*
+!.env.example
+*.pem
+scripts/mongo-keyfile
+
+# build output
+/bin/
+/dist/
+*.test
+*.out
+
+# node
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# local
+.DS_Store
+.deploy/
+!.deploy/evidence.md
+.dev-state/
+.dev-bin/
+.dev-logs/

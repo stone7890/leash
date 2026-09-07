@@ -1,0 +1,40 @@
+{
+  "rule": "S4", "code": "VELOCITY_LIMIT",
+  "$comment": "The only RETRIABLE block: a velocity window clears on its own, so an SDK may back off and try again. Every other block needs a person to change something. This rule is also decided a second time by the database, atomically, because an in-memory window would be correct for one signer process and silently wrong the day there are two — if the two ever disagree, the database is right.",
+  "cases": [
+    { "name": "pass · an empty window",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "pass · prior spend well inside the window limit",
+      "snapshot": { "allowance": { "velocity": [
+        { "at": "2026-09-04T13:59:00Z", "amount": "0.200000" },
+        { "at": "2026-09-04T13:58:00Z", "amount": "0.100000" } ] } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · a sum EXACTLY equal to the limit is allowed",
+      "snapshot": { "allowance": { "velocity": [
+        { "at": "2026-09-04T13:59:00Z", "amount": "0.900000" } ] } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · one micro-USDC over the limit is refused",
+      "snapshot": { "allowance": { "velocity": [
+        { "at": "2026-09-04T13:59:00Z", "amount": "0.900001" } ] } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "blocked", "failed_rule": "S4", "code": "VELOCITY_LIMIT", "tier": "signer" } },
+
+    { "name": "boundary · an entry EXACTLY 600 seconds old is OUTSIDE the window",
+      "$why": "now is 14:00:00 and the window is 600s, so 13:50:00 is the cutoff. An entry at exactly the cutoff has aged out. This boundary is asserted twice: here, and against the real database aggregation.",
+      "snapshot": { "allowance": { "velocity": [
+        { "at": "2026-09-04T13:50:00Z", "amount": "5.000000" } ] } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · an entry one second inside the window still counts",
+      "snapshot": { "allowance": { "velocity": [
+        { "at": "2026-09-04T13:50:01Z", "amount": "5.000000" } ] } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "blocked", "failed_rule": "S4", "code": "VELOCITY_LIMIT" } }
+  ]
+}

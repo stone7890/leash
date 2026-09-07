@@ -1,0 +1,27 @@
+{
+  "rule": "S0", "code": "NETWORK_MISMATCH",
+  "$comment": "S0 is evaluated FIRST and cannot be disabled. A network mismatch means every subsequent comparison would be made against the wrong world, so nothing after it is meaningful. Three things must agree: the key's prefix, the agent's network, and the network named in the challenge.",
+  "cases": [
+    { "name": "pass · a sandbox key, a sandbox agent and a sandbox challenge",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a test key presented for a mainnet agent",
+      "snapshot": { "key_network": "sandbox", "agent": { "network": "mainnet" } },
+      "request":  { "network": "mainnet" },
+      "expect": { "verdict": "blocked", "failed_rule": "S0", "code": "NETWORK_MISMATCH", "tier": "signer" } },
+
+    { "name": "fail · a live key presented for a sandbox agent — a test key must never spend real money",
+      "snapshot": { "key_network": "mainnet" },
+      "expect": { "verdict": "blocked", "failed_rule": "S0", "code": "NETWORK_MISMATCH" } },
+
+    { "name": "boundary · the key and the agent agree, but the CHALLENGE names the other network",
+      "$why": "This is the half-implemented version of the rule: a check that only compares the key prefix to the agent waves this through, and the agent then pays against the wrong network's mint.",
+      "request": { "network": "mainnet" },
+      "expect": { "verdict": "blocked", "failed_rule": "S0", "code": "NETWORK_MISMATCH" } },
+
+    { "name": "fail · S0 wins even when the agent is also killed",
+      "$why": "Evaluation order is part of the contract. The SDK branches on the code, so a killed agent with a network mismatch must always report the same one.",
+      "snapshot": { "key_network": "mainnet", "agent": { "killed": true } },
+      "expect": { "verdict": "blocked", "failed_rule": "S0", "code": "NETWORK_MISMATCH" } }
+  ]
+}

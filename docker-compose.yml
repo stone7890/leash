@@ -1,0 +1,172 @@
+# Leash — the whole stack.
+#
+#   make start   builds and starts everything, waits for it, and prints where to go.
+#
+# Five services behind one front door:
+#
+#   nginx      :80    the only published port. Routes to the four below
+#   website    :3000  the dashboard AND fifteen of the seventeen API routes
+#   signer     :4100  POST /v1/sign — the only process holding agent keys
+#   indexer    :4300  the four read-back loops, and the onboarding SSE stream
+#   demo402    :4200  the $0.01 sample x402 endpoint, for onboarding step 5
+#
+# Plus two pieces of infrastructure:
+#
+#   mongo      a SINGLE-NODE REPLICA SET, never a standalone. Multi-document transactions and
+#              change streams both require one, and both are load-bearing — the kill switch's
+#              "instantly" is a change stream.
+#   validator  a local Solana test validator. This is the sandbox: real chain, real signatures,
+#              real read-back, and no dependency on a public network being up. The specification's
+#              sandbox-first design wants exactly this, and its open question [Q5] — whether to use
+#              a hosted test network — becomes a configuration change rather than a rewrite.
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["${HTTP_PORT:-80}:80"]
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      website: { condition: service_started }
+      signer:  { condition: service_started }
+      indexer: { condition: service_started }
+      demo402: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:8.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports: ["${MONGO_PORT:-27017}:27017"]
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      # rs.initiate() returns BEFORE the node has been elected, so the first w:majority write fails
+      # with NotWritablePrimary. Waiting for isWritablePrimary — not merely for the process to be
+      # up — is what makes `depends_on` mean something here.
+      test: >
+        mongosh --quiet --eval "
+          try { if (!rs.status().ok) throw 0 } catch (e) {
+            try { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) } catch (e2) {}
+          }
+          quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+    restart: unless-stopped
+
+  validator:
+    image: leash/solana-validator:2.1.11
+    platform: linux/amd64
+    build:
+      context: ./deploy/validator
+      platforms: ["linux/amd64"]
+    # NO --reset. The ledger lives in a volume and survives a restart, because the sandbox mint
+    # and the delegations made against it are recorded in the database — wiping the chain while
+    # keeping the database leaves the two describing different worlds.
+    #
+    # `make clean` destroys both together, which is the only correct way to start over.
+    command: ["--quiet", "--ledger", "/ledger", "--rpc-port", "8899", "--bind-address", "0.0.0.0"]
+    ports: ["${VALIDATOR_PORT:-8899}:8899"]
+    volumes:
+      - ledger:/ledger
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -s -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}' http://localhost:8899 | grep -q ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-shot. Creates the sandbox USDC mint, funds the demo endpoint's recipient account, applies
+  # the migrations, and writes what it made into a volume the services read. It exits when done,
+  # and everything that needs it waits for that exit.
+  bootstrap:
+    build: { context: ., dockerfile: deploy/backend.Dockerfile }
+    command: ["/bin/leashctl", "bootstrap"]
+    env_file: [.env]
+    environment:
+      MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
+      RPC_SANDBOX_URL: "http://validator:8899"
+      LEASH_STATE_DIR: /state
+    volumes:
+      - leashstate:/state
+    depends_on:
+      mongo:     { condition: service_healthy }
+      validator: { condition: service_healthy }
+    restart: "no"
+
+  signer:
+    build: { context: ., dockerfile: deploy/backend.Dockerfile }
+    command: ["/bin/leash-signer"]
+    env_file: [.env]
+    environment:
+      MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
+      RPC_SANDBOX_URL: "http://validator:8899"
+      LEASH_STATE_DIR: /state
+    volumes:
+      - leashstate:/state:ro
+    expose: ["4100"]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  indexer:
+    build: { context: ., dockerfile: deploy/backend.Dockerfile }
+    command: ["/bin/leash-indexer"]
+    env_file: [.env]
+    environment:
+      MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
+      RPC_SANDBOX_URL: "http://validator:8899"
+      DEMO_ENDPOINT_URL: "http://demo402:4200"
+      SIGNER_BASE_URL: "http://signer:4100"
+      LEASH_STATE_DIR: /state
+    volumes:
+      - leashstate:/state:ro
+    expose: ["4300"]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  demo402:
+    build: { context: ., dockerfile: deploy/backend.Dockerfile }
+    command: ["/bin/leash-demo402"]
+    env_file: [.env]
+    environment:
+      MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
+      RPC_SANDBOX_URL: "http://validator:8899"
+      LEASH_STATE_DIR: /state
+      # The sample endpoint is a sandbox fixture. It refuses to boot with mainnet configured.
+      NETWORKS: sandbox
+    volumes:
+      - leashstate:/state:ro
+    expose: ["4200"]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  website:
+    build: { context: ., dockerfile: deploy/website.Dockerfile }
+    env_file: [.env]
+    environment:
+      MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
+      RPC_SANDBOX_URL: "http://validator:8899"
+      SIGNER_BASE_URL: "http://signer:4100"
+      INDEXER_BASE_URL: "http://indexer:4300"
+      LEASH_STATE_DIR: /state
+    volumes:
+      - leashstate:/state:ro
+    expose: ["3000"]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+volumes:
+  mongodata:
+  leashstate:
+  ledger:

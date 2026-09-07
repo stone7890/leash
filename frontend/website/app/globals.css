@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root { color-scheme: dark; }
+
+body {
+  background: #12101F;
+  color: #E9E7F4;
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* A user who has asked for stillness gets the state as text. The interface is full of spinners for
+   states that legitimately wait, and none of them is load-bearing. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Never removed. */
+:focus-visible { outline: 2px solid #9C6BFF; outline-offset: 2px; }
+
+@layer components {
+  .card { @apply rounded-[10px] border border-line bg-panel p-4; }
+
+  /* Invariant I3, made visible.
+     Solid border and a filled green dot: Solana enforces it, with or without Leash running.
+     Dashed border and a hollow amber dot: the signer checks it before each signature. */
+  .tier-onchain { @apply rounded-[10px] border border-solid border-grn/40 bg-panel p-4; }
+  .tier-signer  { @apply rounded-[10px] border border-dashed border-amb/40 bg-panel p-4; }
+
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+}

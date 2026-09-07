@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leash — Technical Design Deck v3.0</title>
+<style>
+:root{--bg:#0f0e17;--panel:#17162a;--panel2:#1e1c36;--line:#2c2950;--tx:#e8e6f5;--mut:#9b97bd;
+--grn:#14f195;--pur:#9945ff;--lil:#b47cff;--red:#ff6b81;--amb:#ffc14d;--blu:#5ac8fa;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--tx);font:13.5px/1.55 -apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+#top{position:fixed;inset:0 0 auto 0;height:46px;display:flex;align-items:center;gap:10px;padding:0 14px;background:#141327;border-bottom:1px solid var(--line);z-index:30}
+#top b{font-size:14px;letter-spacing:.4px}#top .sp{flex:1}
+#top button{background:var(--panel2);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer}
+#top button:hover{border-color:var(--lil)}
+#prog{position:fixed;top:46px;left:0;height:2px;background:var(--grn);z-index:31;transition:width .2s}
+#toc{position:fixed;top:48px;bottom:0;left:0;width:230px;overflow:auto;padding:14px 10px;border-right:1px solid var(--line);background:#131226}
+#toc .g{font-size:10px;letter-spacing:2px;color:var(--mut);margin:12px 6px 4px;text-transform:uppercase}
+#toc a{display:block;color:var(--mut);text-decoration:none;font-size:12px;padding:5px 8px;border-radius:6px;border-left:2px solid transparent}
+#toc a.on{color:var(--tx);background:var(--panel2);border-left-color:var(--grn)}
+#stage{position:fixed;top:48px;left:230px;right:0;bottom:0;overflow:auto;padding:22px 26px}
+.slide{display:none;max-width:1150px;margin:0 auto 26px}
+body.ov .slide{display:block;border-bottom:1px dashed var(--line);padding-bottom:26px}
+.slide.on{display:block}
+h1{font-size:26px;margin:.2em 0 .3em}h2{font-size:19px;margin:0 0 10px;color:#fff}
+h3{font-size:14px;margin:18px 0 6px;color:var(--lil)}
+p{margin:6px 0;color:var(--tx)}.mut{color:var(--mut)}
+.kicker{font-size:10.5px;letter-spacing:2.5px;color:var(--grn);text-transform:uppercase;margin-bottom:6px}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--panel2);color:#fff;font-size:11.5px}
+td{background:var(--panel)}
+code,.mono{font-family:var(--mono);font-size:12px;color:var(--blu)}
+pre{background:#0b0a14;border:1px solid var(--line);border-radius:9px;padding:12px 14px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.5;color:#d7d4ee}
+pre .k{color:var(--lil)}pre .s{color:var(--grn)}pre .c{color:#6f6b96}pre .n{color:var(--amb)}
+.badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:1px;border-radius:5px;padding:1px 7px;vertical-align:2px}
+.b-mvp{background:#12382b;color:var(--grn);border:1px solid #1d5c45}
+.b-v2{background:#2a1c46;color:var(--lil);border:1px solid #4a3380}
+.b-opt{background:#26243c;color:var(--mut);border:1px solid var(--line)}
+.note,.warn,.crit{border-radius:9px;padding:10px 13px;margin:10px 0;font-size:12.8px}
+.note{background:#13202e;border:1px solid #23405c}
+.warn{background:#2e2410;border:1px solid #5c4a1d}
+.crit{background:#301318;border:1px solid #66242f}
+.note b:first-child{color:var(--blu)}.warn b:first-child{color:var(--amb)}.crit b:first-child{color:var(--red)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.viz{overflow-x:auto;background:#0b0a14;border:1px solid var(--line);border-radius:10px;padding:8px;margin:10px 0}
+.pill{display:inline-block;border-radius:99px;padding:1px 9px;font-size:11px;border:1px solid var(--line);background:var(--panel2)}
+.stat{font-size:26px;font-weight:800;color:var(--grn)}
+.frame{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0d0c18;margin:8px 0}
+.fbar{display:flex;gap:6px;align-items:center;background:#1a1930;padding:7px 10px;border-bottom:1px solid var(--line)}
+.dot{width:9px;height:9px;border-radius:50%}.furl{margin-left:8px;background:#0d0c18;border:1px solid var(--line);border-radius:6px;padding:2px 10px;font-size:11px;color:var(--mut);font-family:var(--mono)}
+.fbody{padding:14px}
+.bar{height:7px;border-radius:99px;background:#26243c;overflow:hidden}.bar i{display:block;height:100%;background:var(--grn)}
+@media print{#top,#toc,#prog{display:none}#stage{position:static;padding:0}.slide{display:block!important;page-break-after:always;max-width:none}body{background:#fff;color:#000}}
+</style>
+</head>
+<body>
+<div id="top"><b>LEASH · Technical Design Deck</b><span class="pill">v3.0 · 04-09-2026</span><span class="sp"></span>
+<button id="bOv">Overview</button><button id="bPr">In / PDF</button><button id="bPrev">←</button><button id="bNext">→</button><span id="cnt" class="mut" style="font-size:12px"></span></div>
+<div id="prog"></div>
+<nav id="toc"></nav>
+<main id="stage">
+
+<!-- ================= 1 · COVER ================= -->
+<section class="slide" data-sec="Mở đầu" data-t="1 · Cover">
+<div class="kicker">Technical design deck v3 · sau prototype v2</div>
+<h1>Leash — lớp spend-management non-custodial cho AI agent trên Solana</h1>
+<p>Owner uỷ quyền ngân sách on-chain (Allowance: cap + expiry) cho từng agent; agent tự trả tiền API qua x402 trong giới hạn đó; Leash cung cấp policy engine, timeline bắt tay 402, kill switch và audit trail. Sandbox-first: mọi workspace bắt đầu bằng tiền test trên Surfnet trước khi chạm mainnet.</p>
+<div class="grid2" style="grid-template-columns:repeat(4,1fr);margin:14px 0">
+<div class="card"><div class="stat">8</div><div class="mut">invariant (thêm I8: cách ly network)</div></div>
+<div class="card"><div class="stat">6</div><div class="mut">phase nghiệp vụ P1–P6</div></div>
+<div class="card"><div class="stat">8 · 13</div><div class="mut">safety rule S0–S7 · bảng DDL</div></div>
+<div class="card"><div class="stat">17 · 4</div><div class="mut">endpoint API · tuần sprint</div></div>
+</div>
+<div class="note"><b>Thay đổi lớn của v3 (so với v1):</b> ① sandbox Surfnet thành môi trường mặc định → invariant I8 mới, cột <code>network</code> xuyên suốt DDL, faucet + endpoint mẫu; ② onboarding 3 bước → <b>5 bước</b> kết thúc bằng test payment live (từ prototype v2, học theo playground pay-kit); ③ hai flow mới: P3 recovery payment-bị-chặn và P4 vòng đời ngân sách (top-up/extend); ④ timeline bắt tay 402 6-bước trở thành dữ liệu hạng nhất (bảng <code>handshake_events</code>); ⑤ ba chương mới cho developer: Stack (6), Contract design (13), Docs guide (16); ⑥ API 9 → 17 endpoint. Chi tiết delta phase ở chương 7, delta DDL ở chương 12.</div>
+<h3>Nguồn của deck</h3>
+<table><tr><th>Nguồn</th><th>Vai trò</th><th>Chương</th></tr>
+<tr><td>Prototype v2 (leash-app-prototype-v2.html, hội thoại này)</td><td>9 màn hình, 9 flow, ngôn ngữ hai tầng cưỡng chế, timeline 402, sandbox UX</td><td>7–10, 15</td></tr>
+<tr><td>Tech deck v1 (leash-technical-deck.html)</td><td>Invariant I1–I7, kiến trúc 4 khối, DDL nền, S1–S7</td><td>3–5, 11–12</td></tr>
+<tr><td>Nghiên cứu web 08–09/2026: pay.sh (debugger, gateway), pay-kit playground 402.surfnet.dev, Kora gasless, primitive Subscriptions &amp; Allowances</td><td>Chuẩn 402/x402, sandbox Surfnet, mô hình facilitator</td><td>4, 8–9, 13</td></tr>
+<tr><td>Pitch deck Leash v1 + quyết định hội thoại (privacy/payroll → V2, mô hình phí)</td><td>Phạm vi, pricing, roadmap</td><td>2, 17</td></tr></table>
+<div class="warn"><b>Giả định công khai (không đổi từ v1):</b> interface chính xác của chương trình Subscriptions &amp; Allowances chưa xác minh với repo chính thức — mọi phụ thuộc đánh dấu [Q1], có fallback ở chương 13. Địa chỉ RPC sandbox công khai của Surfnet cho bên thứ ba là [Q5].</div>
+</section>
+
+<!-- ================= 2 · CÁCH ĐỌC ================= -->
+<section class="slide" data-sec="Mở đầu" data-t="2 · Cách đọc deck">
+<h2>2 · Cách đọc — badge, màu, ranh giới phạm vi</h2>
+<h3>Badge phạm vi</h3>
+<table><tr><th>Badge</th><th>Nghĩa</th><th>Quy tắc</th></tr>
+<tr><td><span class="badge b-mvp">MVP</span></td><td>Ship trong sprint 4 tuần</td><td>Không cắt; mỗi tuần một output mở được (chương 17)</td></tr>
+<tr><td><span class="badge b-v2">V2</span></td><td>Đã thiết kế, chưa build</td><td>Kiến trúc chừa chỗ cắm, không code trong sprint</td></tr>
+<tr><td><span class="badge b-opt">OPT</span></td><td>Tuỳ chọn</td><td>Chỉ làm nếu dư tuần 4</td></tr></table>
+<h3>Ngoài phạm vi — bảo vệ ngày giao hàng</h3>
+<table><tr><th>Không làm</th><th>Vì sao</th></tr>
+<tr><td>Custody tiền/khoá treasury; fiat on/off-ramp; KYC</td><td>I1 — lá chắn pháp lý; đối tác lo ramp</td></tr>
+<tr><td>Privacy transfers (confidential amounts) và payroll/payout người</td><td>Quyết định hội thoại: xung đột scheme <code>exact</code> + USDC gốc không có confidential extension → <span class="badge b-v2">V2</span> "Private to the world, transparent to you" khi 3 điều kiện đạt</td></tr>
+<tr><td>EVM/Base; multi-chain</td><td>MVP gắn primitive Solana; policy layer viết trừu tượng</td></tr>
+<tr><td>Marketplace/discovery endpoint; merchant billing; mobile; multi-user RBAC; sidecar tự host</td><td>Không đổi từ v1 — pay.sh lo discovery; 1 owner = 1 workspace</td></tr>
+<tr><td>Thu phí % trên micro-payment x402; thu phí kill switch/revoke/audit của chính mình</td><td>Quyết định mô hình phí: phá kinh tế agent / phá niềm tin sản phẩm an toàn</td></tr></table>
+<div class="note"><b>Trong phạm vi mới của v3:</b> sandbox Surfnet + faucet + endpoint 402 mẫu; test payment trong onboarding; recovery một-chạm; top-up/extend; timeline 402; rotate API key; template.</div>
+</section>
+
+<!-- ================= 3 · INVARIANTS ================= -->
+<section class="slide" data-sec="Mở đầu" data-t="3 · Invariants">
+<h2>3 · Invariants — 8 luật mọi chương phải phục tùng</h2>
+<p class="mut">I1–I7 giữ nguyên từ v1 (đã audit). I8 mới, sinh ra từ sandbox-first. Reviewer bác PR bằng cách chỉ số hiệu.</p>
+<table>
+<tr><th style="width:40px">#</th><th>Luật</th><th>Vỡ thì mất gì</th></tr>
+<tr><td><b>I1</b></td><td><b>Non-custodial với treasury.</b> Mọi tx động tới treasury (delegate, top-up, revoke) do ví owner ký. Leash không giữ tiền/khoá owner.</td><td>Rơi vào diện money-transmission; mất định vị</td></tr>
+<tr><td><b>I2</b></td><td><b>Chain là nguồn sự thật ngân sách.</b> DB là cache kèm <code>last_read_slot</code>; UI hiển thị số nào phải nói được đọc ở slot nào.</td><td>Owner tin vào kiểm soát không tồn tại</td></tr>
+<tr><td><b>I3</b></td><td><b>Phân tầng cưỡng chế trung thực.</b> Cứng on-chain: cap, expiry, revoke. Mềm tại Signer: allow-list, per-tx, velocity. UI bắt buộc dán nhãn tầng (ngôn ngữ thị giác: viền liền/chấm đặc vs viền đứt/chấm rỗng — chương 15).</td><td>Sự cố đầu tiên phá uy tín sản phẩm an toàn</td></tr>
+<tr><td><b>I4</b></td><td><b>Không báo thành công sớm; unknown ≠ failed.</b> Mọi ghi chain qua trạng thái chờ, chỉ thoát bằng read-back theo signature. Cấm retry bỏ qua bước đọc.</td><td>Trả tiền hai lần cho một challenge</td></tr>
+<tr><td><b>I5</b></td><td><b>Kill switch sống sót khi Leash sập.</b> Revoke là tx owner ký thẳng chain; docs công khai cách revoke bằng ví/CLI.</td><td>Agent xổng chuồng đúng lúc cần dây cương</td></tr>
+<tr><td><b>I6</b></td><td><b>Tiền là số nguyên base unit.</b> BIGINT micro-USDC ở DB, u64 ở protocol. Cấm float mọi tầng.</td><td>Audit trail vô dụng vì lệch tích luỹ</td></tr>
+<tr><td><b>I7</b></td><td><b>Idempotency cưỡng chế tại storage.</b> Ngoài: <code>challenge_hash UNIQUE</code>. Trong: <code>Idempotency-Key UNIQUE</code>. Retry trả kết quả cũ.</td><td>Ký đôi một challenge = trả đôi</td></tr>
+<tr><td><b>I8</b></td><td><b>Sandbox và mainnet cách ly tuyệt đối.</b> <code>network</code> gắn vào agent/allowance/payment từ lúc tạo, không đổi được (CHECK + cột immutable); API key prefix <code>lk_test_/lk_live_</code>; Signer từ chối challenge lệch network của agent key; RPC endpoint chọn theo bản ghi, không theo config toàn cục.</td><td>Key test tiêu tiền thật — thảm hoạ niềm tin và tiền</td></tr>
+</table>
+<div class="note"><b>Các trạng thái phải tách riêng (không đổi):</b> allowance (pending/active/exhausted/expired/revoked) · payment (signed/submitted/confirmed/failed/unknown) · verdict (allowed/blocked) — cộng thêm trục mới độc lập: <code>network</code> (sandbox/mainnet). Gộp enum là lỗi data-model.</div>
+</section>
+
+<!-- ================= 4 · BLOCK DIAGRAM ================= -->
+<section class="slide" data-sec="Kiến trúc" data-t="4 · Sơ đồ khối">
+<h2>4 · Sơ đồ khối — trách nhiệm và điều cấm</h2>
+<table>
+<tr><th>Thành phần</th><th>Chịu trách nhiệm</th><th><b>Không bao giờ được</b></th><th>Scope</th></tr>
+<tr><td><b>Dashboard</b> — Next.js SPA</td><td>Onboard 5 bước, env switch sandbox/mainnet, feed + timeline, kill switch, recovery một-chạm, top-up, audit</td><td>Giữ key; tự tính số dư; ghi thẳng RPC</td><td><span class="badge b-mvp">MVP</span></td></tr>
+<tr><td><b>Leash API</b> — Fastify/TS + Postgres</td><td>CRUD agent/policy/template, build tx chưa ký, feed/timeline/audit, alert, faucet sandbox, job export</td><td>Ký tx; chạm agent key; trộn network trong một query không lọc (I8)</td><td><span class="badge b-mvp">MVP</span></td></tr>
+<tr><td><b>Policy Signer</b> — service riêng + KMS</td><td>Giữ agent key, chấm S1–S7, ký transfer trong Allowance, ghi handshake_events pha 1–3. Duy nhất giữ key, duy nhất ký</td><td>Giữ key owner (I1); HTTP ngoài trong đường ký; ký challenge lệch network (I8)</td><td><span class="badge b-mvp">MVP</span></td></tr>
+<tr><td><b>Indexer</b> — worker trong API</td><td>Read-back allowance/payment theo network, reconciliation, alert-eval, ghi handshake_events pha 5–6. Duy nhất long-poll ra ngoài</td><td>Suy "confirmed" từ HTTP response; sửa bảng append-only</td><td><span class="badge b-mvp">MVP</span></td></tr>
+<tr><td><b>Demo endpoint 402</b> — api.sandbox.leash.dev</td><td>Endpoint x402 mẫu giá $0.01 tUSDC cho bước test P1; tự verify + submit lên Surfnet</td><td>Nhận traffic mainnet</td><td><span class="badge b-mvp">MVP</span> (mới v3)</td></tr>
+<tr><td><b>Solana</b> — Surfnet sandbox / mainnet, primitive S&amp;A + USDC</td><td>Nguồn sự thật cứng cả hai network</td><td>—</td><td>ngoài</td></tr>
+<tr><td><b>x402 endpoint + facilitator</b> (vd. Kora gasless)</td><td>Phát 402, verify, settle</td><td>—</td><td>ngoài</td></tr>
+<tr><td><b>Signer sidecar tự host</b></td><td>Cùng contract /v1/sign</td><td>—</td><td><span class="badge b-v2">V2</span></td></tr>
+</table>
+<div class="crit"><b>Cấm tuyệt đối (không đổi):</b> agent key và owner key không bao giờ cùng một process. Thêm v3: một process Signer phục vụ cả hai network nhưng key ref luôn tra theo (agent, network) — không tồn tại đường code nào lấy key mainnet cho challenge sandbox.</div>
+</section>
+
+<!-- ================= 5 · STACK ================= -->
+<section class="slide" data-sec="Kiến trúc" data-t="5 · Stack">
+<h2>5 · Stack — lựa chọn và lý do <span class="badge b-mvp">MVP</span></h2>
+<table>
+<tr><th>Tầng</th><th>Chọn</th><th>Vì sao (cho solo dev, 4 tuần)</th></tr>
+<tr><td>Frontend</td><td>Next.js 15 + TypeScript, Tailwind; wallet: @solana/wallet-adapter (Phantom/Backpack/Solflare); đăng nhập SIWS</td><td>Prototype v2 chuyển thẳng thành component; wallet-adapter là chuẩn hệ sinh thái</td></tr>
+<tr><td>Backend API</td><td>Node 22 + Fastify + zod (validate) + Postgres 16 (pg, không ORM nặng)</td><td>Fastify nhẹ + schema-first; zod dùng chung type với frontend; SQL tay để CHECK/partial index đúng như chương 12</td></tr>
+<tr><td>Signer</td><td>Node 22 service riêng, cùng repo khác process; AWS KMS (envelope encryption cho agent key)</td><td>Cùng ngôn ngữ giảm tải ngữ cảnh; KMS rẻ và đủ cho MVP; tách process theo chương 4</td></tr>
+<tr><td>On-chain</td><td>@solana/web3.js v2 (kit) + adapter tự viết cho primitive S&amp;A (chương 13); test local bằng <code>pay server demo</code> + Surfnet</td><td>v2 kit tree-shake tốt, API mới; adapter cô lập [Q1] vào một file</td></tr>
+<tr><td>Hạ tầng</td><td>Postgres managed (Neon/Supabase-postgres-only), deploy Fly.io/Railway (API + Signer 2 app), Vercel cho dashboard</td><td>Zero devops; Signer cần region cố định gần RPC</td></tr>
+<tr><td>RPC</td><td>Helius (chính) + Triton/QuickNode (dự phòng), chọn theo <code>network</code> của bản ghi</td><td>I2/I4 sống bằng read-back — RPC là single point cần 2 nhà</td></tr>
+<tr><td>Test</td><td>Vitest (unit policy engine — golden vectors), Playwright (e2e dashboard), sandbox e2e chạy thật trên Surfnet mỗi CI</td><td>Golden vectors cho S1–S7 là bộ test giá trị nhất trên repo</td></tr>
+<tr><td>Repo</td><td>pnpm monorepo: <code>apps/web · apps/api · apps/signer · packages/core</code> (types, policy, adapter) — chi tiết chương 16</td><td>packages/core để policy engine chạy được cả trong sidecar V2</td></tr>
+</table>
+<div class="warn"><b>Bẫy chọn stack:</b> đừng thay "adapter tự viết" bằng SDK bên thứ ba chưa audit cho primitive — [Q1] phải được cô lập trong <code>packages/core/allowance-adapter.ts</code> để khi interface thật khác giả định, chỉ sửa một file.</div>
+</section>
+
+<!-- ================= 6 · LANE MODEL ================= -->
+<section class="slide" data-sec="Kiến trúc" data-t="6 · Mô hình lane">
+<h2>6 · Mô hình actor/lane</h2>
+<table>
+<tr><th>Lane</th><th>Là ai/gì</th><th>Owner triển khai</th></tr>
+<tr><td>Owner (người)</td><td>Chủ treasury, ký delegate/top-up/revoke</td><td>— (ví)</td></tr>
+<tr><td>Dashboard</td><td>SPA Leash</td><td>Founder</td></tr>
+<tr><td>Leash API</td><td>Backend + indexer</td><td>Founder</td></tr>
+<tr><td>Signer</td><td>Policy Signer</td><td>Founder</td></tr>
+<tr><td>Agent runtime</td><td>MCP/CLI (<code>pay</code>)/SDK của khách</td><td>Khách</td></tr>
+<tr><td>x402 Endpoint / Endpoint mẫu</td><td>API bán tài nguyên + facilitator; bản demo sandbox do Leash chạy</td><td>Bên thứ ba / Founder</td></tr>
+<tr><td>Solana</td><td>Surfnet sandbox hoặc mainnet — chọn theo network bản ghi</td><td>Ngoài</td></tr>
+</table>
+<h3>Chuyển lane bị cấm</h3>
+<table>
+<tr><th>Cạnh cấm</th><th>Vì sao</th></tr>
+<tr><td>Agent → Solana (tự ký/submit)</td><td>Bỏ qua policy mềm; agent không bao giờ thấy key</td></tr>
+<tr><td>Dashboard → Signer</td><td>Signer chỉ nhận từ agent key — thu hẹp bề mặt quanh key</td></tr>
+<tr><td>Leash API → Solana (ghi)</td><td>Chỉ owner ký tx treasury; chỉ Signer ký tx agent (I1)</td></tr>
+<tr><td>Signer → x402 endpoint</td><td>Signer chỉ ký, agent tự retry</td></tr>
+<tr><td>Bất kỳ lane nào → network khác network của agent</td><td>I8 — cách ly tuyệt đối; kể cả endpoint mẫu chỉ sống ở sandbox</td></tr>
+</table>
+</section>
+
+<!-- ================= 7 · FLOW OVERVIEW ================= -->
+<section class="slide" data-sec="Business flow" data-t="7 · Tổng quan 6 phase">
+<h2>7 · Tổng quan nghiệp vụ — 6 phase (regroup từ 5 phase của v1)</h2>
+<p><span class="pill">P1 Onboard + test</span> → <span class="pill">P2 Agent pays</span> → <span class="pill">P3 Giám sát &amp; recovery</span> → <span class="pill">P4 Vòng đời ngân sách</span> → <span class="pill">P5 Kill / revoke</span> → <span class="pill">P6 Audit export</span></p>
+<h3>Delta so với v1 (bắt buộc khai khi regroup)</h3>
+<table>
+<tr><th>v1</th><th>v3</th><th>Gì đổi, vì sao</th></tr>
+<tr><td>P1 Onboard &amp; delegate (3 bước)</td><td>P1 Onboard + test (5 bước)</td><td>Thêm N-10..N-12: connect snippet + test payment live — từ prototype v2, vòng lặp khép trong một phiên</td></tr>
+<tr><td>P2 Agent pays</td><td>P2 giữ nguyên</td><td>Thêm ghi <code>handshake_events</code> làm dữ liệu timeline</td></tr>
+<tr><td>P3 Monitor &amp; alert</td><td>P3 Giám sát &amp; recovery</td><td>Gộp thêm vòng recovery: blocked → "Add to allow list" một-chạm → lần thử sau đi qua</td></tr>
+<tr><td>— (không có)</td><td>P4 Vòng đời ngân sách</td><td>Mới: top-up cap / extend expiry / trạng thái exhausted, expiring-soon — từ prototype v2</td></tr>
+<tr><td>P4 Revoke/expire</td><td>P5 Kill/revoke</td><td>Đánh số lại, nội dung giữ (bẫy cửa sổ revoke không đổi)</td></tr>
+<tr><td>P5 Audit export</td><td>P6 Audit export</td><td>Đánh số lại, giữ 202 + job</td></tr>
+</table>
+<h3>Happy path xuyên suốt</h3>
+<table>
+<tr><th>#</th><th>Milestone</th><th>Step</th><th>Ai</th></tr>
+<tr><td>1</td><td>Agent tồn tại trên sandbox, có template, có key</td><td>N-01…N-04</td><td>Owner, Signer</td></tr>
+<tr><td>2</td><td>Ngân sách sống on-chain (read-back rồi mới active)</td><td>N-05…N-09</td><td>Owner, Solana</td></tr>
+<tr><td>3</td><td>Test payment 9-dòng chạy qua endpoint mẫu, có receipt</td><td>N-10…N-12</td><td>Signer, Endpoint mẫu</td></tr>
+<tr><td>4</td><td>Thanh toán production đầu tiên + timeline 6 bước trong drawer</td><td>P2 (N-10..N-19 của v1)</td><td>Agent, Signer</td></tr>
+<tr><td>5</td><td>Một khoản bị chặn được recovery một-chạm, lần sau đi qua</td><td>P3</td><td>Owner</td></tr>
+<tr><td>6</td><td>Cap tăng $10→$20 không khoảng chết; hết hạn tự nhiên hoặc kill; CSV audit</td><td>P4–P6</td><td>Owner, API</td></tr>
+</table>
+</section>
+
+<!-- ================= 8 · P1 ================= -->
+<section class="slide" data-sec="Business flow" data-t="8 · P1 Onboard + test">
+<h2>8 · P1 — Onboard 5 bước, kết thúc bằng payment thật <span class="badge b-mvp">MVP</span></h2>
+<div class="viz"><svg viewBox="0 0 2074 508" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P1 · Onboard, delegate va test payment dau tien (sandbox-first)" style="min-width:1500px">
+<defs>
+<marker id="swflow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4A5F75"/></marker>
+<marker id="swsuccess" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2FBF71"/></marker>
+<marker id="swerror" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#F2555A"/></marker>
+<marker id="swopen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#22D3EE"/></marker>
+</defs><style>svg .swt{font-size:9.6px;fill:#F2F7FC;font-weight:650}svg .swi{font-size:7.8px;font-family:ui-monospace,Menlo,monospace}svg .swl{font-size:9.4px;fill:#6F8296;font-weight:700}svg .swe{font-size:7.6px;fill:#7D93AB}</style>
+<text x="6" y="18" style="font-size:10px;fill:#5A7286;font-weight:700;letter-spacing:1px">P1 · Onboard, delegate va test payment dau tien (sandbox-first)</text>
+<rect x="0" y="36" width="2074" height="76" fill="#0D141B"/>
+<line x1="0" y1="36" x2="2074" y2="36" stroke="#18222E"/>
+<text class="swl" x="6" y="52">Owner (người)</text>
+<rect x="0" y="112" width="2074" height="76" fill="#0A1017"/>
+<line x1="0" y1="112" x2="2074" y2="112" stroke="#18222E"/>
+<text class="swl" x="6" y="128">Dashboard</text>
+<rect x="0" y="188" width="2074" height="76" fill="#0D141B"/>
+<line x1="0" y1="188" x2="2074" y2="188" stroke="#18222E"/>
+<text class="swl" x="6" y="204">Leash API</text>
+<rect x="0" y="264" width="2074" height="76" fill="#0A1017"/>
+<line x1="0" y1="264" x2="2074" y2="264" stroke="#18222E"/>
+<text class="swl" x="6" y="280">Signer</text>
+<rect x="0" y="340" width="2074" height="76" fill="#0D141B"/>
+<line x1="0" y1="340" x2="2074" y2="340" stroke="#18222E"/>
+<text class="swl" x="6" y="356">Solana (sandbox/mainnet)</text>
+<rect x="0" y="416" width="2074" height="76" fill="#0A1017"/>
+<line x1="0" y1="416" x2="2074" y2="416" stroke="#18222E"/>
+<text class="swl" x="6" y="432">Endpoint mẫu</text>
+<line x1="152" y1="36" x2="152" y2="492" stroke="#22303F"/>
+<path d="M304 74.0 C311.0 74.0,311.0 150.0,318 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M460 150.0 C467.0 150.0,467.0 226.0,474 226.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M616 226.0 C623.0 226.0,623.0 302.0,630 302.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M772 302.0 C779.0 302.0,779.0 150.0,786 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M928 150.0 C935.0 150.0,935.0 226.0,942 226.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M1084 226.0 C1091.0 226.0,1091.0 74.0,1098 74.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M1240 74.0 C1247.0 74.0,1247.0 378.0,1254 378.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="1247.0" y="223.0" text-anchor="middle">submit</text>
+<path d="M1396 378.0 C1403.0 378.0,1403.0 226.0,1410 226.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="1403.0" y="299.0" text-anchor="middle">read-back</text>
+<path d="M1552 226.0 C1559.0 226.0,1559.0 150.0,1566 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M1708 150.0 C1715.0 150.0,1715.0 454.0,1722 454.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<text class="swe" x="1715.0" y="299.0" text-anchor="middle">test call</text>
+<path d="M1864 454.0 C1871.0 454.0,1871.0 302.0,1878 302.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="1871.0" y="375.0" text-anchor="middle">vòng P2</text>
+<g><title>N-01 — Workspace mặc định vào SANDBOX (Surfnet, test USDC). Faucet cấp 100 tUSDC.</title>
+<rect x="162" y="49.0" width="142" height="50" rx="7" fill="#101C29" stroke="#4C9AFF" stroke-width="1.1"/>
+<rect x="162" y="49.0" width="3" height="50" rx="1.5" fill="#4C9AFF"/>
+<text class="swi" x="170" y="61.0" fill="#4C9AFF">N-01</text>
+<text class="swt" x="170" y="74.0">Connect wallet (SIWS)</text>
+</g>
+<g><title>N-02 — Research / Scraper / Blank — prefill policy. Trạng thái draft.</title>
+<rect x="318" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="318" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="326" y="137.0" fill="#A78BFA">N-02</text>
+<text class="swt" x="326" y="150.0">Chọn template + đặt tên</text>
+</g>
+<g><title>N-03 — Idempotency-Key bắt buộc; network gắn vào agent ngay từ lúc tạo (I8).</title>
+<rect x="474" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="474" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="482" y="213.0" fill="#7D93AB">N-03</text>
+<text class="swt" x="482" y="226.0">Provision agent</text>
+</g>
+<g><title>N-04 — Ed25519 bọc KMS. API key prefix lk_test_/lk_live_ theo network.</title>
+<rect x="630" y="277.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="630" y="277.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="638" y="289.0" fill="#7D93AB">N-04</text>
+<text class="swt" x="638" y="302.0">Sinh agent keypair</text>
+</g>
+<g><title>N-05 — Cap số + preset, ước lượng số call, chip allow-list, cảnh báo wildcard.</title>
+<rect x="786" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="786" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="794" y="137.0" fill="#A78BFA">N-05</text>
+<text class="swt" x="794" y="150.0">Budget &amp; rules</text>
+</g>
+<g><title>N-06 — Tx chưa ký trên đúng network của agent. Trả về ví owner.</title>
+<rect x="942" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="942" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="950" y="213.0" fill="#7D93AB">N-06</text>
+<text class="swt" x="950" y="226.0">Build delegation tx</text>
+</g>
+<g><title>N-07 — Nhánh lỗi: ví từ chối → hiện Try again, không tạo gì (không chỉ happy path).</title>
+<rect x="1098" y="49.0" width="142" height="50" rx="7" fill="#101C29" stroke="#4C9AFF" stroke-width="1.1"/>
+<rect x="1098" y="49.0" width="3" height="50" rx="1.5" fill="#4C9AFF"/>
+<text class="swi" x="1106" y="61.0" fill="#4C9AFF">N-07</text>
+<text class="swt" x="1106" y="74.0">Ký trong ví</text>
+</g>
+<g><title>N-08 — Cap + expiry cho agent pubkey trên network tương ứng.</title>
+<rect x="1254" y="353.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="1254" y="353.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="1262" y="365.0" fill="#7D93AB">N-08</text>
+<text class="swt" x="1262" y="378.0">Allowance on-chain</text>
+</g>
+<g><title>N-09 — Chỉ active sau khi đọc được account (I4). Trước đó: pending.</title>
+<rect x="1410" y="201.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="1410" y="201.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="1418" y="213.0" fill="#2FBF71">N-09</text>
+<text class="swt" x="1418" y="226.0">Read-back → active</text>
+</g>
+<g><title>N-10 — Snippet MCP/CLI/Node + API key hiện một lần. Bấm &#x27;Run a test payment&#x27;.</title>
+<rect x="1566" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="1566" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="1574" y="137.0" fill="#A78BFA">N-10</text>
+<text class="swt" x="1574" y="150.0">Connect &amp; test</text>
+</g>
+<g><title>N-11 — api.sandbox.leash.dev/demo — giá $0.01 tUSDC, luôn sẵn.</title>
+<rect x="1722" y="429.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="1722" y="429.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="1730" y="441.0" fill="#A78BFA">N-11</text>
+<text class="swt" x="1730" y="454.0">Endpoint mẫu 402</text>
+</g>
+<g><title>N-12 — Chạy đúng vòng P2, log stream về wizard. Kết thúc: receipt + vào dashboard.</title>
+<rect x="1878" y="277.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="1878" y="277.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="1886" y="289.0" fill="#2FBF71">N-12</text>
+<text class="swt" x="1886" y="302.0">Handshake live 9 dòng</text>
+</g>
+</svg></div>
+<div class="warn"><b>Bước hay bị làm sai nhất — N-12:</b> cám dỗ là fake log test bằng frontend (như prototype). Bản thật phải chạy đúng vòng P2 qua endpoint mẫu trên Surfnet và stream log từ server (SSE trên <code>GET /v1/test-payments/:id/stream</code>); mỗi dòng log là một <code>handshake_events</code> thật. Test giả = dạy người dùng tin một hệ chưa được kiểm chứng.</div>
+<h3>Cơ chế khó nhất: một wizard, hai network, không lẫn (I8)</h3>
+<pre><span class="c">// POST /v1/agents — network chốt tại đây, không sửa được về sau</span>
+<span class="k">const</span> agent = <span class="k">await</span> db.agents.insert({
+  org_id, name, template_id,
+  network: workspace.activeNetwork,          <span class="c">// 'sandbox' mặc định cho workspace mới</span>
+  idempotency_key: req.headers[<span class="s">'idempotency-key'</span>] });
+<span class="k">const</span> key = <span class="k">await</span> signer.provision(agent.id, agent.network);
+<span class="k">return</span> { agent, apiKey: (agent.network === <span class="s">'sandbox'</span> ? <span class="s">'lk_test_'</span> : <span class="s">'lk_live_'</span>) + key.secret };
+<span class="c">// DB: CHECK (network IN ('sandbox','mainnet')); trigger cấm UPDATE cột network</span>
+<span class="c">// Signer: verdict S0 (trước cả S1) — prefix key phải khớp network của agent, lệch → 403 NETWORK_MISMATCH</span></pre>
+<p class="mut">Nhánh lỗi N-07 (ví từ chối) là yêu cầu từ prototype v2: hiện "The wallet rejected the transaction. Nothing was created" + Try again — không rơi về màn trống.</p>
+</section>
+
+<!-- ================= 9 · P2 ================= -->
+<section class="slide" data-sec="Business flow" data-t="9 · P2 Agent pays">
+<h2>9 · P2 — Vòng bắt tay 402 + timeline hạng nhất <span class="badge b-mvp">MVP</span></h2>
+<div class="viz"><svg viewBox="0 0 1606 432" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P2 · Agent trả tiền qua x402 (happy path + chặn)" style="min-width:1500px">
+<defs>
+<marker id="swflow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4A5F75"/></marker>
+<marker id="swsuccess" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2FBF71"/></marker>
+<marker id="swerror" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#F2555A"/></marker>
+<marker id="swopen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#22D3EE"/></marker>
+</defs><style>svg .swt{font-size:9.6px;fill:#F2F7FC;font-weight:650}svg .swi{font-size:7.8px;font-family:ui-monospace,Menlo,monospace}svg .swl{font-size:9.4px;fill:#6F8296;font-weight:700}svg .swe{font-size:7.6px;fill:#7D93AB}</style>
+<text x="6" y="18" style="font-size:10px;fill:#5A7286;font-weight:700;letter-spacing:1px">P2 · Agent trả tiền qua x402 (happy path + chặn)</text>
+<rect x="0" y="36" width="1606" height="76" fill="#0D141B"/>
+<line x1="0" y1="36" x2="1606" y2="36" stroke="#18222E"/>
+<text class="swl" x="6" y="52">Agent runtime</text>
+<rect x="0" y="112" width="1606" height="76" fill="#0A1017"/>
+<line x1="0" y1="112" x2="1606" y2="112" stroke="#18222E"/>
+<text class="swl" x="6" y="128">x402 Endpoint</text>
+<rect x="0" y="188" width="1606" height="76" fill="#0D141B"/>
+<line x1="0" y1="188" x2="1606" y2="188" stroke="#18222E"/>
+<text class="swl" x="6" y="204">Leash Signer</text>
+<rect x="0" y="264" width="1606" height="76" fill="#0A1017"/>
+<line x1="0" y1="264" x2="1606" y2="264" stroke="#18222E"/>
+<text class="swl" x="6" y="280">Solana</text>
+<rect x="0" y="340" width="1606" height="76" fill="#0D141B"/>
+<line x1="0" y1="340" x2="1606" y2="340" stroke="#18222E"/>
+<text class="swl" x="6" y="356">Leash API</text>
+<line x1="152" y1="36" x2="152" y2="416" stroke="#22303F"/>
+<path d="M304 74.0 C311.0 74.0,311.0 150.0,318 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M460 150.0 C467.0 150.0,467.0 74.0,474 74.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M616 74.0 C623.0 74.0,623.0 226.0,630 226.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M772 226.0 C779.0 226.0,779.0 226.0,786 226.0" stroke="#F2555A" stroke-width="1.2" fill="none" marker-end="url(#swerror)" opacity=".9"/>
+<path d="M772 226.0 C857.0 226.0,857.0 226.0,942 226.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<path d="M1013.0 251.0 C1013.0 256.0,1013.0 256.0,1013.0 99.0" stroke="#4A5F75" stroke-width="1.1" fill="none" stroke-dasharray="3 3" marker-end="url(#swflow)" opacity=".85"/>
+<path d="M1084 74.0 C1091.0 74.0,1091.0 150.0,1098 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M1240 150.0 C1247.0 150.0,1247.0 302.0,1254 302.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="1247.0" y="223.0" text-anchor="middle">submit</text>
+<path d="M1396 302.0 C1403.0 302.0,1403.0 378.0,1410 378.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="1403.0" y="337.0" text-anchor="middle">read-back</text>
+<g><title>N-10 — Agent gọi API trả phí, chưa kèm thanh toán.</title>
+<rect x="162" y="49.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="162" y="49.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="170" y="61.0" fill="#7D93AB">N-10</text>
+<text class="swt" x="170" y="74.0">GET /resource</text>
+</g>
+<g><title>N-11 — Kèm payment requirements: scheme exact, network, payTo, amount, nonce.</title>
+<rect x="318" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="318" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="326" y="137.0" fill="#A78BFA">N-11</text>
+<text class="swt" x="326" y="150.0">402 Payment Required</text>
+</g>
+<g><title>N-12 — Agent chuyển nguyên văn challenge cho Signer kèm agent API key.</title>
+<rect x="474" y="49.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="474" y="49.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="482" y="61.0" fill="#7D93AB">N-12</text>
+<text class="swt" x="482" y="74.0">POST /v1/sign</text>
+</g>
+<g><title>N-13 — Allowance active, allow-list, per-tx max, velocity, budget cache, kill switch.</title>
+<rect x="630" y="201.0" width="142" height="50" rx="7" fill="#221C0E" stroke="#F0B429" stroke-width="1.1"/>
+<rect x="630" y="201.0" width="3" height="50" rx="1.5" fill="#F0B429"/>
+<text class="swi" x="638" y="213.0" fill="#F0B429">N-13</text>
+<text class="swt" x="638" y="226.0">Policy check S1–S7</text>
+</g>
+<g><title>N-14 — Ghi sign_requests (append-only) với rule vi phạm. Agent nhận lý do máy-đọc-được.</title>
+<rect x="786" y="201.0" width="142" height="50" rx="7" fill="#201013" stroke="#F2555A" stroke-width="1.1"/>
+<rect x="786" y="201.0" width="3" height="50" rx="1.5" fill="#F2555A"/>
+<text class="swi" x="794" y="213.0" fill="#F2555A">N-14</text>
+<text class="swt" x="794" y="226.0">403 verdict=blocked</text>
+</g>
+<g><title>N-15 — Tx rút trong Allowance, đúng amount của challenge. Ký bằng agent key.</title>
+<rect x="942" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="942" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="950" y="213.0" fill="#7D93AB">N-15</text>
+<text class="swt" x="950" y="226.0">Build &amp; sign transfer</text>
+</g>
+<g><title>N-16 — Agent gọi lại endpoint kèm payment payload trong header.</title>
+<rect x="942" y="49.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="942" y="49.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="950" y="61.0" fill="#7D93AB">N-16</text>
+<text class="swt" x="950" y="74.0">Retry + X-PAYMENT</text>
+</g>
+<g><title>N-17 — Endpoint/facilitator xác minh và submit tx lên mạng.</title>
+<rect x="1098" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="1098" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="1106" y="137.0" fill="#A78BFA">N-17</text>
+<text class="swt" x="1106" y="150.0">Verify &amp; settle</text>
+</g>
+<g><title>N-18 — USDC chuyển từ treasury tới payTo, allowance bị trừ tương ứng on-chain.</title>
+<rect x="1254" y="277.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="1254" y="277.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="1262" y="289.0" fill="#7D93AB">N-18</text>
+<text class="swt" x="1262" y="302.0">Transfer confirmed</text>
+</g>
+<g><title>N-19 — Indexer poll theo signature → payments=confirmed, gắn agent + endpoint, đẩy feed/alert.</title>
+<rect x="1410" y="353.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="1410" y="353.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="1418" y="365.0" fill="#2FBF71">N-19</text>
+<text class="swt" x="1418" y="378.0">Read-back &amp; attribute</text>
+</g>
+</svg></div>
+<div class="crit"><b>Bẫy trả-đôi (không đổi từ v1):</b> retry cùng challenge phải nhận lại đúng payload cũ (khoá <code>challenge_hash UNIQUE</code>); payment kẹt ở submitted/unknown chỉ thoát bằng read-back theo signature — không bao giờ bằng ký lại.</div>
+<h3>Mới trong v3: mỗi bước của vòng này ghi một handshake_event — timeline trong drawer là dữ liệu thật, không phải render lại từ log</h3>
+<pre><span class="c">// 6 pha chuẩn của timeline (khớp UI drawer prototype v2)</span>
+<span class="k">type</span> HandshakePhase = <span class="s">'challenge_received'</span> | <span class="s">'rules_evaluated'</span> | <span class="s">'signed'</span>
+                     | <span class="s">'replayed'</span> | <span class="s">'broadcast'</span> | <span class="s">'confirmed'</span>;
+<span class="c">// Ai ghi pha nào: Signer ghi 1–3 (kèm kết quả từng rule S0–S7 vào detail jsonb);</span>
+<span class="c">// pha 4 'replayed' suy ra khi endpoint trả kết quả HOẶC bỏ trống (agent-side, không quan sát được — hiển thị mờ);</span>
+<span class="c">// Indexer ghi 5–6 từ read-back (kèm slot). Pha 'confirmed' CHỈ Indexer được ghi (I4).</span>
+<span class="c">// Blocked: timeline dừng ở pha 2 với failed_rule — đúng biến thể drawer 'blocked'.</span>
+<span class="c">// Unknown: pha 5 tồn tại, pha 6 chưa — drawer hiện spinner + giờ read-back kế tiếp.</span></pre>
+<p class="mut">Card từng bước nằm trong sơ đồ. Ràng buộc storage: <code>one_payment_per_challenge</code>, <code>payments.signature UNIQUE</code> (chương 12).</p>
+</section>
+
+<!-- ================= 10 · P3 + P4 ================= -->
+<section class="slide" data-sec="Business flow" data-t="10 · P3 · P4 · P5">
+<h2>10 · P3 Recovery · P4 Vòng đời ngân sách · P5 Kill/Revoke <span class="badge b-mvp">MVP</span></h2>
+<h3>P3 — vòng recovery khép (mới, từ prototype v2)</h3><div class="viz"><svg viewBox="0 0 982 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P3 · Recovery một-chạm cho payment bị chặn" style="min-width:982px">
+<defs>
+<marker id="swflow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4A5F75"/></marker>
+<marker id="swsuccess" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2FBF71"/></marker>
+<marker id="swerror" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#F2555A"/></marker>
+<marker id="swopen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#22D3EE"/></marker>
+</defs><style>svg .swt{font-size:9.6px;fill:#F2F7FC;font-weight:650}svg .swi{font-size:7.8px;font-family:ui-monospace,Menlo,monospace}svg .swl{font-size:9.4px;fill:#6F8296;font-weight:700}svg .swe{font-size:7.6px;fill:#7D93AB}</style>
+<text x="6" y="18" style="font-size:10px;fill:#5A7286;font-weight:700;letter-spacing:1px">P3 · Recovery một-chạm cho payment bị chặn</text>
+<rect x="0" y="36" width="982" height="76" fill="#0D141B"/>
+<line x1="0" y1="36" x2="982" y2="36" stroke="#18222E"/>
+<text class="swl" x="6" y="52">Owner (người)</text>
+<rect x="0" y="112" width="982" height="76" fill="#0A1017"/>
+<line x1="0" y1="112" x2="982" y2="112" stroke="#18222E"/>
+<text class="swl" x="6" y="128">Dashboard</text>
+<rect x="0" y="188" width="982" height="76" fill="#0D141B"/>
+<line x1="0" y1="188" x2="982" y2="188" stroke="#18222E"/>
+<text class="swl" x="6" y="204">Leash API</text>
+<rect x="0" y="264" width="982" height="76" fill="#0A1017"/>
+<line x1="0" y1="264" x2="982" y2="264" stroke="#18222E"/>
+<text class="swl" x="6" y="280">Signer</text>
+<line x1="152" y1="36" x2="152" y2="340" stroke="#22303F"/>
+<path d="M304 150.0 C311.0 150.0,311.0 150.0,318 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M460 150.0 C467.0 150.0,467.0 74.0,474 74.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M616 74.0 C623.0 74.0,623.0 226.0,630 226.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="623.0" y="147.0" text-anchor="middle">hợp lệ</text>
+<path d="M616 74.0 C701.0 74.0,701.0 226.0,786 226.0" stroke="#F2555A" stroke-width="1.2" fill="none" marker-end="url(#swerror)" opacity=".9"/>
+<text class="swe" x="701.0" y="147.0" text-anchor="middle">chặn đúng</text>
+<path d="M772 226.0 C779.0 226.0,779.0 302.0,786 302.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="779.0" y="261.0" text-anchor="middle">verdict kế tiếp</text>
+<g><title>N-30 — Pill đỏ &#x27;blocked · not allowed&#x27; + alert Telegram nếu bật.</title>
+<rect x="162" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="162" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="170" y="137.0" fill="#A78BFA">N-30</text>
+<text class="swt" x="170" y="150.0">Feed hiện blocked</text>
+</g>
+<g><title>N-31 — Tên rule vi phạm + copy &#x27;nothing was signed, nothing moved&#x27;.</title>
+<rect x="318" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="318" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="326" y="137.0" fill="#A78BFA">N-31</text>
+<text class="swt" x="326" y="150.0">Drawer: timeline dừng</text>
+<text class="swt" x="326" y="161.0">pha 2</text>
+</g>
+<g><title>N-32 — Owner quyết — Leash không tự đoán hộ.</title>
+<rect x="474" y="49.0" width="142" height="50" rx="7" fill="#221C0E" stroke="#F0B429" stroke-width="1.1"/>
+<rect x="474" y="49.0" width="3" height="50" rx="1.5" fill="#F0B429"/>
+<text class="swi" x="482" y="61.0" fill="#F0B429">N-32</text>
+<text class="swt" x="482" y="74.0">Endpoint hợp lệ?</text>
+</g>
+<g><title>N-33 — Đúng một host của challenge, không wildcard. Ghi policy_revisions.</title>
+<rect x="630" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="630" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="638" y="213.0" fill="#7D93AB">N-33</text>
+<text class="swt" x="638" y="226.0">PATCH allow-hosts +1</text>
+<text class="swt" x="638" y="237.0">host</text>
+</g>
+<g><title>N-34 — Chỉ tắt tiếng alert cho (agent, host) — việc chặn vẫn giữ.</title>
+<rect x="786" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="786" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="794" y="213.0" fill="#7D93AB">N-34</text>
+<text class="swt" x="794" y="226.0">Tạo suppression</text>
+</g>
+<g><title>N-35 — Agent tự retry theo nhịp của nó; timeline mới đủ 6 pha.</title>
+<rect x="786" y="277.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="786" y="277.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="794" y="289.0" fill="#2FBF71">N-35</text>
+<text class="swt" x="794" y="302.0">Lần thử sau qua S2</text>
+</g>
+</svg></div>
+<table>
+<tr><th>Bước</th><th>Chuyện gì xảy ra</th><th>Ràng buộc</th></tr>
+<tr><td>R-1</td><td>Feed/alert hiện khoản <span class="pill" style="color:var(--red)">blocked</span>; owner mở drawer — timeline dừng ở "Blocked by rule" kèm tên rule</td><td>Copy chuẩn chương 15: nói rõ "nothing was signed, nothing moved"</td></tr>
+<tr><td>R-2</td><td>Owner bấm <b>Add &lt;host&gt; to allow list</b> → <code>PATCH /v1/agents/:id/policy/allow-hosts</code> (thêm đúng một host, idempotent theo nội dung)</td><td>Hiệu lực từ verdict kế tiếp; ghi <code>policy_revisions</code> để audit ai đổi gì lúc nào</td></tr>
+<tr><td>R-3</td><td>Hoặc bấm <b>This block is correct</b> → tạo suppression cho (agent, host): không alert lặp cho host đó</td><td>Suppression không tắt việc chặn — chỉ tắt tiếng alert</td></tr>
+<tr><td>R-4</td><td>Agent tự retry theo nhịp của nó; lần thử sau qua S2 → timeline mới đầy đủ 6 pha</td><td>Leash không tự replay hộ agent — không đụng lane cấm</td></tr>
+</table>
+<div class="warn"><b>Bẫy R-2:</b> nút một-chạm không được thêm wildcard hay cả domain gốc — chỉ đúng host trong challenge. Thêm rộng hơn là quyết định của owner tại tab Rules, không phải của nút recovery.</div>
+<h3>P4 — top-up / extend không khoảng chết</h3>
+<div class="viz"><svg viewBox="0 0 1138 432" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P4 · Vòng đời ngân sách: top-up / extend" style="min-width:1138px">
+<defs>
+<marker id="swflow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4A5F75"/></marker>
+<marker id="swsuccess" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2FBF71"/></marker>
+<marker id="swerror" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#F2555A"/></marker>
+<marker id="swopen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#22D3EE"/></marker>
+</defs><style>svg .swt{font-size:9.6px;fill:#F2F7FC;font-weight:650}svg .swi{font-size:7.8px;font-family:ui-monospace,Menlo,monospace}svg .swl{font-size:9.4px;fill:#6F8296;font-weight:700}svg .swe{font-size:7.6px;fill:#7D93AB}</style>
+<text x="6" y="18" style="font-size:10px;fill:#5A7286;font-weight:700;letter-spacing:1px">P4 · Vòng đời ngân sách: top-up / extend</text>
+<rect x="0" y="36" width="1138" height="76" fill="#0D141B"/>
+<line x1="0" y1="36" x2="1138" y2="36" stroke="#18222E"/>
+<text class="swl" x="6" y="52">Owner (người)</text>
+<rect x="0" y="112" width="1138" height="76" fill="#0A1017"/>
+<line x1="0" y1="112" x2="1138" y2="112" stroke="#18222E"/>
+<text class="swl" x="6" y="128">Dashboard</text>
+<rect x="0" y="188" width="1138" height="76" fill="#0D141B"/>
+<line x1="0" y1="188" x2="1138" y2="188" stroke="#18222E"/>
+<text class="swl" x="6" y="204">Leash API</text>
+<rect x="0" y="264" width="1138" height="76" fill="#0A1017"/>
+<line x1="0" y1="264" x2="1138" y2="264" stroke="#18222E"/>
+<text class="swl" x="6" y="280">Solana</text>
+<rect x="0" y="340" width="1138" height="76" fill="#0D141B"/>
+<line x1="0" y1="340" x2="1138" y2="340" stroke="#18222E"/>
+<text class="swl" x="6" y="356">Signer</text>
+<line x1="152" y1="36" x2="152" y2="416" stroke="#22303F"/>
+<path d="M304 150.0 C311.0 150.0,311.0 226.0,318 226.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M460 226.0 C467.0 226.0,467.0 74.0,474 74.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M616 74.0 C623.0 74.0,623.0 302.0,630 302.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="623.0" y="185.0" text-anchor="middle">submit</text>
+<path d="M772 302.0 C779.0 302.0,779.0 226.0,786 226.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="779.0" y="261.0" text-anchor="middle">read-back</text>
+<path d="M928 226.0 C935.0 226.0,935.0 378.0,942 378.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<g><title>N-40 — Modal: cap mới hoặc expiry mới; hiện số dư ví + phí mạng.</title>
+<rect x="162" y="125.0" width="142" height="50" rx="7" fill="#1A1630" stroke="#A78BFA" stroke-width="1.1"/>
+<rect x="162" y="125.0" width="3" height="50" rx="1.5" fill="#A78BFA"/>
+<text class="swi" x="170" y="137.0" fill="#A78BFA">N-40</text>
+<text class="swt" x="170" y="150.0">Add budget / extend</text>
+</g>
+<g><title>N-41 — Tx chưa ký. Allowance cũ tiếp tục hiệu lực tới khi tx mới confirm.</title>
+<rect x="318" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="318" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="326" y="213.0" fill="#7D93AB">N-41</text>
+<text class="swt" x="326" y="226.0">Build modify tx</text>
+</g>
+<g><title>N-42 — Owner ký — Leash không đụng treasury (I1).</title>
+<rect x="474" y="49.0" width="142" height="50" rx="7" fill="#101C29" stroke="#4C9AFF" stroke-width="1.1"/>
+<rect x="474" y="49.0" width="3" height="50" rx="1.5" fill="#4C9AFF"/>
+<text class="swi" x="482" y="61.0" fill="#4C9AFF">N-42</text>
+<text class="swt" x="482" y="74.0">Ký trong ví</text>
+</g>
+<g><title>N-43 — Không có khoảng chết: giá trị cũ áp dụng tới đúng slot thay thế.</title>
+<rect x="630" y="277.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="630" y="277.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="638" y="289.0" fill="#7D93AB">N-43</text>
+<text class="swt" x="638" y="302.0">Cap/expiry mới on-chain</text>
+</g>
+<g><title>N-44 — Bar và số chỉ đổi sau read-back kèm slot (I2, I4).</title>
+<rect x="786" y="201.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="786" y="201.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="794" y="213.0" fill="#2FBF71">N-44</text>
+<text class="swt" x="794" y="226.0">Read-back → UI cập nhật</text>
+</g>
+<g><title>N-45 — allowance-refresh ≤60s; ký tiếp theo dùng cap mới.</title>
+<rect x="942" y="353.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="942" y="353.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="950" y="365.0" fill="#7D93AB">N-45</text>
+<text class="swt" x="950" y="378.0">Signer nạp lại cache</text>
+</g>
+</svg></div>
+<p class="mut">Trạng thái phái sinh trên UI: <b>exhausted</b> (cap rút hết, allowance vẫn active tới expiry — gợi ý top-up), <b>expiring-soon</b> (&lt;24h — cột Expires cảnh vàng + alert nếu bật). Cả hai tính lúc query từ dữ liệu chain, không lưu.</p><h3>P5 — kill switch hai tầng</h3><div class="viz"><svg viewBox="0 0 982 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P5 · Kill switch hai tầng và cửa sổ revoke" style="min-width:982px">
+<defs>
+<marker id="swflow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4A5F75"/></marker>
+<marker id="swsuccess" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#2FBF71"/></marker>
+<marker id="swerror" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#F2555A"/></marker>
+<marker id="swopen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#22D3EE"/></marker>
+</defs><style>svg .swt{font-size:9.6px;fill:#F2F7FC;font-weight:650}svg .swi{font-size:7.8px;font-family:ui-monospace,Menlo,monospace}svg .swl{font-size:9.4px;fill:#6F8296;font-weight:700}svg .swe{font-size:7.6px;fill:#7D93AB}</style>
+<text x="6" y="18" style="font-size:10px;fill:#5A7286;font-weight:700;letter-spacing:1px">P5 · Kill switch hai tầng và cửa sổ revoke</text>
+<rect x="0" y="36" width="982" height="76" fill="#0D141B"/>
+<line x1="0" y1="36" x2="982" y2="36" stroke="#18222E"/>
+<text class="swl" x="6" y="52">Owner (người)</text>
+<rect x="0" y="112" width="982" height="76" fill="#0A1017"/>
+<line x1="0" y1="112" x2="982" y2="112" stroke="#18222E"/>
+<text class="swl" x="6" y="128">Leash API</text>
+<rect x="0" y="188" width="982" height="76" fill="#0D141B"/>
+<line x1="0" y1="188" x2="982" y2="188" stroke="#18222E"/>
+<text class="swl" x="6" y="204">Signer</text>
+<rect x="0" y="264" width="982" height="76" fill="#0A1017"/>
+<line x1="0" y1="264" x2="982" y2="264" stroke="#18222E"/>
+<text class="swl" x="6" y="280">Solana</text>
+<line x1="152" y1="36" x2="152" y2="340" stroke="#22303F"/>
+<path d="M304 74.0 C311.0 74.0,311.0 226.0,318 226.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<text class="swe" x="311.0" y="147.0" text-anchor="middle">tức thời</text>
+<path d="M304 74.0 C311.0 74.0,311.0 150.0,318 150.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M460 150.0 C467.0 150.0,467.0 74.0,474 74.0" stroke="#4A5F75" stroke-width="1.2" fill="none" marker-end="url(#swflow)" opacity=".9"/>
+<path d="M616 74.0 C623.0 74.0,623.0 302.0,630 302.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="623.0" y="185.0" text-anchor="middle">submit</text>
+<path d="M772 302.0 C779.0 302.0,779.0 150.0,786 150.0" stroke="#2FBF71" stroke-width="1.2" fill="none" marker-end="url(#swsuccess)" opacity=".9"/>
+<text class="swe" x="779.0" y="223.0" text-anchor="middle">read-back</text>
+<g><title>N-50 — Modal xác nhận nêu rõ 2 việc sẽ xảy ra theo thứ tự.</title>
+<rect x="162" y="49.0" width="142" height="50" rx="7" fill="#101C29" stroke="#4C9AFF" stroke-width="1.1"/>
+<rect x="162" y="49.0" width="3" height="50" rx="1.5" fill="#4C9AFF"/>
+<text class="swi" x="170" y="61.0" fill="#4C9AFF">N-50</text>
+<text class="swt" x="170" y="74.0">Bấm Kill switch</text>
+</g>
+<g><title>N-51 — killed=true — signer từ chối mọi /v1/sign mới tức thời.</title>
+<rect x="318" y="201.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="318" y="201.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="326" y="213.0" fill="#7D93AB">N-51</text>
+<text class="swt" x="326" y="226.0">S7 chặn ngay (mềm)</text>
+</g>
+<g><title>N-52 — Tx chưa ký; docs cũng in cách ký tay bằng CLI (I5).</title>
+<rect x="318" y="125.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="318" y="125.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="326" y="137.0" fill="#7D93AB">N-52</text>
+<text class="swt" x="326" y="150.0">Build revoke tx</text>
+</g>
+<g><title>N-53 — Chỉ owner ký được — Leash sập vẫn revoke được (I5).</title>
+<rect x="474" y="49.0" width="142" height="50" rx="7" fill="#101C29" stroke="#4C9AFF" stroke-width="1.1"/>
+<rect x="474" y="49.0" width="3" height="50" rx="1.5" fill="#4C9AFF"/>
+<text class="swi" x="482" y="61.0" fill="#4C9AFF">N-53</text>
+<text class="swt" x="482" y="74.0">Ký revoke trong ví</text>
+</g>
+<g><title>N-54 — Từ slot này, cả key lộ cũng không rút được nữa.</title>
+<rect x="630" y="277.0" width="142" height="50" rx="7" fill="#141C24" stroke="#7D93AB" stroke-width="1.1"/>
+<rect x="630" y="277.0" width="3" height="50" rx="1.5" fill="#7D93AB"/>
+<text class="swi" x="638" y="289.0" fill="#7D93AB">N-54</text>
+<text class="swt" x="638" y="302.0">Revoke land on-chain</text>
+<text class="swt" x="638" y="313.0">(cứng)</text>
+</g>
+<g><title>N-55 — UI giữ &#x27;revoking…&#x27; tới đúng bước này — cửa sổ giữa N-51 và N-54 là bản chất chain, không phải bug.</title>
+<rect x="786" y="125.0" width="142" height="50" rx="7" fill="#0F2018" stroke="#2FBF71" stroke-width="1.1"/>
+<rect x="786" y="125.0" width="3" height="50" rx="1.5" fill="#2FBF71"/>
+<text class="swi" x="794" y="137.0" fill="#2FBF71">N-55</text>
+<text class="swt" x="794" y="150.0">Read-back → revoked</text>
+</g>
+</svg></div><div class="warn"><b>Bẫy cửa sổ revoke (không đổi từ v1):</b> giữa N-51 và N-54 tồn tại khoảng vài giây mà một agent gọi *thẳng* facilitator bằng payload đã ký trước đó vẫn settle được. UI phải giữ "revoking…" tới read-back N-55; với traffic đi qua Leash, S7 thu cửa sổ về ~0.</div>
+</section>
+
+<!-- ================= 11 · ENGINE ================= -->
+<section class="slide" data-sec="Engine" data-t="11 · Policy engine">
+<h2>11 · Policy engine — S0–S7, latency, reconciliation</h2>
+<h3>Toán ngân sách (I6 — micro-USDC, bigint; không đổi từ v1)</h3>
+<pre>remaining_base = cap_base − drawn_onchain_base − Σ amount_base(payments ∈ {signed, submitted, unknown})
+<span class="c">// Q3 đã chốt: nhiều yêu cầu tranh phần còn lại → FIFO theo thời điểm ký; phần vượt 403 BUDGET_EXHAUSTED</span></pre>
+<h3>Safety rules — any-fail = blocked; thêm S0 cho I8</h3>
+<table>
+<tr><th>#</th><th>Kiểm tra</th><th>Tầng (I3)</th><th>Mã 403</th><th>Mặc định</th></tr>
+<tr><td><b>S0</b> <span class="badge b-mvp">mới</span></td><td>Prefix API key khớp network của agent; mint/network trong challenge khớp network của agent</td><td>mềm — Signer</td><td>NETWORK_MISMATCH</td><td>bật, không tắt được</td></tr>
+<tr><td>S1</td><td>Allowance active, chưa expired/revoked (cache ≤60s + đối chiếu chain)</td><td>cứng — chain</td><td>ALLOWANCE_INACTIVE</td><td>bật, không tắt được</td></tr>
+<tr><td>S2</td><td>Host + payTo thuộc allow-list; wildcard được phép nhưng agent mang cờ cảnh báo trên UI</td><td>mềm</td><td>ENDPOINT_NOT_ALLOWED</td><td>bật</td></tr>
+<tr><td>S3</td><td>amount ≤ per_tx_max</td><td>mềm</td><td>PER_TX_LIMIT</td><td>bật</td></tr>
+<tr><td>S4</td><td>Velocity cửa sổ 10 phút</td><td>mềm</td><td>VELOCITY_LIMIT</td><td>bật</td></tr>
+<tr><td>S5</td><td>remaining ≥ amount (công thức trên)</td><td>cứng khi chain bắt kịp</td><td>BUDGET_EXHAUSTED</td><td>bật, không tắt được</td></tr>
+<tr><td>S6</td><td>Mint = USDC của đúng network; scheme = exact</td><td>mềm</td><td>UNSUPPORTED_TERMS</td><td>bật, không tắt được</td></tr>
+<tr><td>S7</td><td>Kill switch flag tắt</td><td>mềm tức thời; cứng sau revoke land</td><td>KILLED</td><td>bật</td></tr>
+</table>
+<h3>Ngân sách latency đường ký (không đổi) + hàng cấm</h3>
+<table>
+<tr><th>Hop</th><th>p50</th><th>p99</th></tr>
+<tr><td>Parse + canonicalize + idempotency</td><td>5 ms</td><td>15 ms</td></tr>
+<tr><td>evalPolicy S0–S7</td><td>10 ms</td><td>30 ms</td></tr>
+<tr><td>KMS unwrap</td><td>20 ms</td><td>80 ms</td></tr>
+<tr><td>Build + ký (blockhash cache 30s theo network)</td><td>15 ms</td><td>40 ms</td></tr>
+<tr><td><b>Tổng thêm</b></td><td><b>&lt;50 ms</b></td><td><b>&lt;300 ms</b></td></tr>
+<tr><td style="color:var(--red)"><b>Cấm</b>: HTTP ngoài trong đường ký; ghi handshake_events pha 1–3 là async fire-and-forget sau khi trả verdict</td><td colspan="2">vi phạm = reject PR</td></tr>
+</table>
+<h3>Reconciliation (chạy riêng từng network — I8)</h3>
+<table>
+<tr><th>Job</th><th>Nhịp</th><th>Làm gì</th></tr>
+<tr><td>allowance-refresh</td><td>60 s</td><td>Đọc lại account active; cập nhật drawn + bắt expired/revoked ngoài luồng</td></tr>
+<tr><td>payment-sweep</td><td>5 phút</td><td>signed/submitted/unknown &gt;90s → getSignatureStatuses; &gt;24h không dấu vết → failed + alert; ghi pha 5–6</td></tr>
+<tr><td>alert-eval</td><td>30 s</td><td>Burn-rate 80/95%, blocked bất thường (trừ suppression), endpoint mới, expiring-soon &lt;24h</td></tr>
+<tr><td>sandbox-faucet-guard <span class="badge b-mvp">mới</span></td><td>giờ</td><td>Rate-limit faucet theo ví; sandbox không giới hạn khác</td></tr>
+</table>
+</section>
+
+<!-- ================= 12 · DATA MODEL ================= -->
+<section class="slide" data-sec="Data & API" data-t="12 · Data model">
+<h2>12 · Data model — 13 bảng; delta so với v1 khai ngay dưới DDL</h2>
+<pre><span class="k">CREATE TYPE</span> network_t <span class="k">AS ENUM</span> (<span class="s">'sandbox','mainnet'</span>);
+<span class="k">CREATE TYPE</span> allowance_state <span class="k">AS ENUM</span> (<span class="s">'pending','active','exhausted','expired','revoked'</span>);
+<span class="k">CREATE TYPE</span> payment_state   <span class="k">AS ENUM</span> (<span class="s">'signed','submitted','confirmed','failed','unknown'</span>);
+<span class="k">CREATE TYPE</span> verdict_t       <span class="k">AS ENUM</span> (<span class="s">'allowed','blocked'</span>);
+<span class="k">CREATE TYPE</span> hs_phase <span class="k">AS ENUM</span> (<span class="s">'challenge_received','rules_evaluated','signed','replayed','broadcast','confirmed'</span>);
+
+<span class="k">CREATE TABLE</span> orgs      (id uuid <span class="k">PK</span>, owner_wallet text <span class="k">NOT NULL UNIQUE</span>, plan text <span class="k">NOT NULL DEFAULT</span> <span class="s">'free'</span>,
+                        active_network network_t <span class="k">NOT NULL DEFAULT</span> <span class="s">'sandbox'</span>, created_at timestamptz);
+<span class="k">CREATE TABLE</span> templates (id text <span class="k">PK</span>, name text, prefills jsonb <span class="k">NOT NULL</span>);          <span class="c">-- seed: research/scraper/blank</span>
+<span class="k">CREATE TABLE</span> agents    (id uuid <span class="k">PK</span>, org_id uuid <span class="k">FK</span>, name text, template_id text <span class="k">FK</span>,
+                        network network_t <span class="k">NOT NULL</span>,                              <span class="c">-- I8: trigger cấm UPDATE cột này</span>
+                        pubkey text <span class="k">NOT NULL UNIQUE</span>, idempotency_key text <span class="k">NOT NULL UNIQUE</span>,
+                        killed boolean <span class="k">NOT NULL DEFAULT</span> false, created_at timestamptz);
+<span class="k">CREATE TABLE</span> agent_keys(agent_id uuid <span class="k">PK FK</span>, kms_key_ref text <span class="k">NOT NULL</span>, rotated_at timestamptz);
+<span class="k">CREATE TABLE</span> allowances(id uuid <span class="k">PK</span>, agent_id uuid <span class="k">FK</span>, network network_t <span class="k">NOT NULL</span>,
+                        onchain_addr text <span class="k">NOT NULL UNIQUE</span>, mint text <span class="k">NOT NULL</span>,
+                        cap_base bigint <span class="k">CHECK</span> (cap_base &gt; 0),
+                        drawn_onchain_base bigint <span class="k">CHECK</span> (drawn_onchain_base <span class="k">BETWEEN</span> 0 <span class="k">AND</span> cap_base),
+                        expiry_ts timestamptz, state allowance_state <span class="k">DEFAULT</span> <span class="s">'pending'</span>, last_read_slot bigint);
+<span class="k">CREATE UNIQUE INDEX</span> one_active_allowance <span class="k">ON</span> allowances(agent_id, mint) <span class="k">WHERE</span> state <span class="k">IN</span> (<span class="s">'pending','active'</span>);
+<span class="k">CREATE TABLE</span> policies  (agent_id uuid <span class="k">PK FK</span>, allow_hosts text[] <span class="k">NOT NULL</span>, allow_all boolean <span class="k">DEFAULT</span> false,
+                        per_tx_max_base bigint <span class="k">CHECK</span>(&gt;0), velocity_max_base bigint <span class="k">CHECK</span>(&gt;0),
+                        velocity_window_s int <span class="k">DEFAULT</span> 600);
+<span class="k">CREATE TABLE</span> policy_revisions(id bigserial <span class="k">PK</span>, agent_id uuid <span class="k">FK</span>, change jsonb, actor text, at timestamptz); <span class="c">-- append-only</span>
+<span class="k">CREATE TABLE</span> sign_requests(id uuid <span class="k">PK</span>, agent_id uuid <span class="k">FK</span>, network network_t <span class="k">NOT NULL</span>,
+                        challenge_hash text <span class="k">NOT NULL UNIQUE</span>, verdict verdict_t, failed_rule text,
+                        checks jsonb <span class="k">NOT NULL</span>,                                    <span class="c">-- kết quả từng S0–S7 cho timeline</span>
+                        requirements jsonb, created_at timestamptz);               <span class="c">-- append-only</span>
+<span class="k">CREATE TABLE</span> payments  (id uuid <span class="k">PK</span>, sign_request_id uuid <span class="k">FK</span>, agent_id uuid <span class="k">FK</span>, allowance_id uuid <span class="k">FK</span>,
+                        network network_t <span class="k">NOT NULL</span>, signature text <span class="k">UNIQUE</span>, pay_to text, host text,
+                        amount_base bigint <span class="k">CHECK</span>(&gt;0), state payment_state <span class="k">DEFAULT</span> <span class="s">'signed'</span>, state_at timestamptz);
+<span class="k">CREATE UNIQUE INDEX</span> one_payment_per_challenge <span class="k">ON</span> payments(sign_request_id);
+<span class="k">CREATE TABLE</span> handshake_events(id bigserial <span class="k">PK</span>, payment_id uuid <span class="k">FK</span>, phase hs_phase <span class="k">NOT NULL</span>,
+                        detail jsonb, read_back_slot bigint, at timestamptz <span class="k">NOT NULL</span>); <span class="c">-- append-only; thay state_transitions của v1</span>
+<span class="k">CREATE UNIQUE INDEX</span> one_phase_per_payment <span class="k">ON</span> handshake_events(payment_id, phase);
+<span class="k">CREATE TABLE</span> alerts    (id uuid <span class="k">PK</span>, org_id uuid <span class="k">FK</span>, kind text, body jsonb, sent_at timestamptz);
+<span class="k">CREATE TABLE</span> suppressions(agent_id uuid <span class="k">FK</span>, host text, created_at timestamptz, <span class="k">PRIMARY KEY</span>(agent_id, host));
+<span class="k">CREATE TABLE</span> audit_jobs(id uuid <span class="k">PK</span>, org_id uuid <span class="k">FK</span>, range_from date, range_to date,
+                        status text <span class="k">DEFAULT</span> <span class="s">'queued'</span>, url text);
+
+<span class="k">REVOKE UPDATE, DELETE ON</span> sign_requests, handshake_events, policy_revisions <span class="k">FROM</span> leash_app;
+<span class="k">REVOKE DELETE ON</span> payments <span class="k">FROM</span> leash_app;</pre>
+<h3>Delta DDL so với v1</h3>
+<table>
+<tr><th>Đổi</th><th>Lý do</th></tr>
+<tr><td>+ <code>network_t</code> trên orgs/agents/allowances/sign_requests/payments; trigger cấm UPDATE agents.network</td><td>I8 — cách ly cưỡng chế tại storage, không phải app code</td></tr>
+<tr><td><code>state_transitions</code> → <code>handshake_events</code> (6 pha chuẩn + unique một-pha-một-payment)</td><td>Timeline drawer là dữ liệu hạng nhất; pha confirmed kèm read_back_slot chứng minh I4</td></tr>
+<tr><td>+ <code>templates</code>, + <code>policies.allow_all</code>, + <code>policy_revisions</code>, + <code>suppressions</code>, + <code>agent_keys.rotated_at</code></td><td>Template picker, cảnh báo wildcard, audit sửa policy (R-2), tắt tiếng alert (R-3), rotate key — đều từ prototype v2</td></tr>
+<tr><td>Bỏ bảng users của v1</td><td>MVP 1 owner = 1 org, owner_wallet nằm ngay orgs — bảng users không trả lời được "vì sao tồn tại"</td></tr>
+</table>
+</section>
+
+<!-- ================= 13 · CONTRACT DESIGN ================= -->
+<section class="slide" data-sec="Data & API" data-t="13 · Contract design">
+<h2>13 · Contract design — tầng on-chain của Leash <span class="badge b-mvp">MVP</span></h2>
+<p class="mut">MVP <b>không viết program mới</b>: dùng primitive Subscriptions &amp; Allowances đã audit. Chương này thiết kế adapter bao quanh nó, ma trận quyền, và fallback nếu [Q1] lệch giả định — tất cả cô lập trong <code>packages/core/allowance-adapter.ts</code>.</p>
+<h3>Interface adapter (ổn định với phần còn lại của hệ, bất kể [Q1])</h3>
+<pre><span class="k">interface</span> AllowanceAdapter {
+  <span class="c">// build tx CHƯA KÝ — chỉ ví owner ký (I1)</span>
+  buildCreate(p: {owner, agent, mint, capBase: <span class="n">bigint</span>, expiryTs, network}): UnsignedTx;
+  buildModify(p: {allowanceAddr, newCapBase?, newExpiryTs?}): UnsignedTx;   <span class="c">// P4 top-up/extend</span>
+  buildRevoke(p: {allowanceAddr}): UnsignedTx;                              <span class="c">// P5, cũng in ra docs revoke-tay (I5)</span>
+  <span class="c">// build + ký transfer rút trong allowance — chỉ Signer gọi, bằng agent key</span>
+  buildDraw(p: {allowanceAddr, agentKey, payTo, amountBase: <span class="n">bigint</span>}): SignedTx;
+  <span class="c">// đọc — chỉ Indexer/Signer-cache gọi</span>
+  readAllowance(addr): {capBase, drawnBase, expiryTs, state, slot};
+}</pre>
+<h3>Ma trận quyền</h3>
+<table>
+<tr><th>Hành động</th><th>Ai ký</th><th>Điều kiện trước</th><th>Đụng tài sản?</th></tr>
+<tr><td>create / modify / revoke allowance</td><td>Ví owner</td><td>SIWS session hợp lệ; modify/revoke: allowance thuộc agent của org</td><td>Không — chỉ tạo/đổi quyền</td></tr>
+<tr><td>draw (transfer trong allowance)</td><td>Agent key (trong Signer)</td><td>Verdict allowed S0–S7</td><td><b>Có</b> — USDC treasury → payTo, bị chặn trên bởi cap on-chain</td></tr>
+<tr><td>đọc account</td><td>Không cần ký</td><td>—</td><td>Không</td></tr>
+<tr><td>Leash backend bất kỳ</td><td><b>Không bao giờ ký gì trên treasury</b></td><td>—</td><td>—</td></tr>
+</table>
+<h3>Bẫy nền tảng Solana — mỗi bẫy một hậu quả cụ thể</h3>
+<table>
+<tr><th>Bẫy</th><th>Hậu quả nếu dính</th><th>Đối sách</th></tr>
+<tr><td>Blockhash hết hạn (~60–90s) giữa build và ký ví</td><td>Owner ký xong tx chết → "đã ký mà không có gì xảy ra"</td><td>Build tx ngay trước khi mở ví; nếu quá 45s → rebuild; UI đã có nhánh Try again (N-07)</td></tr>
+<tr><td>ATA của payTo chưa tồn tại</td><td>Draw fail khó hiểu ở settle</td><td>Scheme exact của x402: tạo ATA là việc phía endpoint/facilitator; Signer chỉ verify tồn tại khi build — thiếu thì 403 UNSUPPORTED_TERMS kèm detail</td></tr>
+<tr><td>USDC là SPL cổ điển, KHÔNG phải Token-2022</td><td>Code viết cho Token-2022 interface fail trên mint thật (và ngược lại trên sandbox nếu tUSDC khác chương trình)</td><td>Adapter nhận <code>tokenProgramId</code> theo mint config từng network; test vector cả hai</td></tr>
+<tr><td>Rent-exempt cho account allowance mới</td><td>Tx create fail vì thiếu lamports</td><td>Fee + rent do owner trả, hiển thị trước trong bước ký (~$0.0002 + rent)</td></tr>
+<tr><td>Ưu tiên phí khi mạng nghẽn</td><td>Read-back trễ hàng phút, unknown tăng vọt</td><td>Compute-budget ix với priority fee động (percentile của recent fees) trong buildCreate/Modify/Revoke; draw do endpoint submit — ngoài kiểm soát, đã có sweep</td></tr>
+</table>
+<div class="crit"><b>Fallback [Q1] — quyết định trước, không cãi giữa sprint:</b> nếu interface primitive khác giả định quá 1 ngày công, chuyển adapter sang SPL <code>approve/revoke</code> delegate chuẩn: giữ được cap on-chain và revoke on-chain; <b>mất expiry on-chain</b> → expiry hạ cấp thành luật mềm tại Signer, và UI đổi nhãn tầng của "Expires" từ on-chain sang signer theo đúng I3. Hạ cấp có kiểm soát, không hoãn ship.</div>
+</section>
+
+<!-- ================= 14 · BACKEND & API ================= -->
+<section class="slide" data-sec="Data & API" data-t="14 · Backend & API">
+<h2>14 · Backend &amp; API contract — 17 endpoint</h2>
+<h3>Service và bảng sở hữu (service khác không đọc bảng của nhau; payments dùng stored proc chung)</h3>
+<table>
+<tr><th>Service</th><th>Sở hữu bảng</th><th>Sync/async</th></tr>
+<tr><td>API</td><td>orgs, agents, templates, policies, policy_revisions, alerts, suppressions, audit_jobs</td><td>Sync trừ audit (202 + job)</td></tr>
+<tr><td>Signer</td><td>agent_keys, sign_requests; ghi payments(insert), handshake_events pha 1–3</td><td>Sync &lt;300ms p99</td></tr>
+<tr><td>Indexer</td><td>allowances(cache), payments(state qua proc), handshake_events pha 5–6</td><td>Async theo nhịp chương 11</td></tr>
+</table>
+<h3>Endpoint <span class="badge b-mvp">MVP</span> (idempotency-key bắt buộc trên mọi POST tạo; phong bì lỗi + mã trạng thái giữ nguyên v1: 202 cho async, 409 cho idempotency conflict, 422 nghiệp vụ)</h3>
+<table>
+<tr><th>Endpoint</th><th>Auth</th><th>Ghi chú</th></tr>
+<tr><td><code>GET /v1/templates</code></td><td>owner</td><td>Seed 3 template — mới v3</td></tr>
+<tr><td><code>POST /v1/agents</code> · <code>GET /v1/agents/:id</code></td><td>owner</td><td>network chốt lúc tạo (I8)</td></tr>
+<tr><td><code>POST /v1/agents/:id/delegation-intents</code> · <code>…/modify-intents</code> · <code>…/revoke-intents</code></td><td>owner</td><td>Trả tx base64 chưa ký; modify-intents mới v3 (P4); revoke set killed=true ngay (S7)</td></tr>
+<tr><td><code>PATCH /v1/agents/:id/policy</code> · <code>PATCH …/policy/allow-hosts</code></td><td>owner</td><td>allow-hosts: thêm đúng 1 host (R-2), ghi policy_revisions — mới v3</td></tr>
+<tr><td><code>POST /v1/agents/:id/keys/rotate</code></td><td>owner</td><td>Key mới hiện một lần; key cũ chết ngay — mới v3</td></tr>
+<tr><td><code>POST /v1/sign</code> <span class="mut">(Signer)</span></td><td>agent key</td><td>200 payload · 403 {code: S0–S7}</td></tr>
+<tr><td><code>GET /v1/agents/:id/payments?cursor=</code> · <code>GET /v1/payments/:id/timeline</code></td><td>owner</td><td>timeline trả 6 pha handshake_events — mới v3</td></tr>
+<tr><td><code>POST /v1/test-payments</code> · <code>GET /v1/test-payments/:id/stream</code></td><td>owner</td><td>Chạy vòng P2 qua endpoint mẫu; stream SSE log — mới v3; 202 khi tạo</td></tr>
+<tr><td><code>POST /v1/sandbox/faucet</code></td><td>owner</td><td>Chỉ sandbox; rate-limit theo ví — mới v3</td></tr>
+<tr><td><code>POST /v1/audit/exports</code> · <code>GET /v1/jobs/:id</code></td><td>owner</td><td>202 luôn — không đổi</td></tr>
+</table>
+</section>
+
+<!-- ================= 15 · UI/UX ================= -->
+<section class="slide" data-sec="UI & Delivery" data-t="15 · UI/UX">
+<h2>15 · UI/UX — đồng bộ prototype v2 (nguồn sự thật giao diện)</h2>
+<p class="mut">Prototype v2 là spec sống: 9 màn hình, 4 modal, đã QA. Chương này chỉ giữ những gì developer cần ngoài prototype: token, luật trạng thái, copy chuẩn.</p><h3>Mockup 4 màn hình then chốt (dữ liệu thật từ prototype v2 — spec chi tiết ở bảng dưới)</h3>
+<div class="grid2">
+<div>
+<div class="frame"><div class="fbar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="furl">app.leash.dev/onboarding · step 5</span></div>
+<div class="fbody" style="font-size:11.5px">
+<b>5 · Watch the first payment</b> <span class="pill" style="color:var(--lil);float:right">Sandbox · test USDC</span>
+<div style="background:#0B0A14;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;font-family:var(--mono);font-size:10.5px;line-height:1.7">
+<div class="mut">$ agent requests …/demo/search</div>
+<div style="color:var(--amb)">← 402 · exact · $0.010 USDC · payTo Ex4…j8Wq</div>
+<div style="color:var(--grn)">✓ rules passed (7/7) · signed in allowance 3xk…9Qe</div>
+<div style="color:var(--amb)">… broadcast — waiting for on-chain read-back</div>
+<div style="color:var(--grn)">✓ confirmed · slot 356 442 231 · ← 200 OK + receipt</div></div>
+<div style="border:1px solid #1D5C45;background:#0F2A20;border-radius:8px;padding:6px 10px;margin-top:8px">Your agent is wired up. Cap $10.00 · $0.010 spent</div>
+</div></div>
+<p class="mut" style="font-size:12px;margin:4px 0 14px">Bước 5 của P1 — log là SSE thật từ server (chương 8), mỗi dòng một handshake_event.</p>
+
+<div class="frame"><div class="fbar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="furl">app.leash.dev/agents/research-bot-01 · Rules</span></div>
+<div class="fbody" style="font-size:11.5px">
+<div style="border:1px solid #1D5C45;border-radius:8px;padding:8px 10px"><b>Enforced by Solana</b> <span style="float:right;border:1px solid var(--grn);border-radius:99px;padding:0 8px;font-size:10px;color:var(--grn)">● on-chain</span>
+<div class="mut" style="margin-top:4px">Spending cap <span class="money" style="color:var(--ink)">$10.00</span> · Expires Sep 11, 14:00</div></div>
+<div style="border:1px dashed #6B571F;border-radius:8px;padding:8px 10px;margin-top:8px"><b>Enforced by Leash signer</b> <span style="float:right;border:1px dashed var(--amb);border-radius:99px;padding:0 8px;font-size:10px;color:var(--amb)">○ signer</span>
+<div class="mut" style="margin-top:4px">Allow: <span class="mono">api.exa.ai, api.helius.dev</span> · Per-tx $0.25 · 10-min $1.00</div></div>
+</div></div>
+<p class="mut" style="font-size:12px;margin:4px 0">Tab Rules — I3 thành hình: viền liền/chấm đặc = cứng, viền đứt/chấm rỗng = mềm. Nhãn tầng không được bỏ.</p>
+</div>
+<div>
+<div class="frame"><div class="fbar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="furl">app.leash.dev/agents</span></div>
+<div class="fbody" style="font-size:11.5px">
+<span class="pill" style="color:var(--lil)">Sandbox</span> <span class="pill mono" style="font-size:10px">slot 356 442 108</span>
+<table style="font-size:11px;margin-top:8px"><tr><th>Agent</th><th>Budget</th><th>Status</th></tr>
+<tr><td>research-bot-01</td><td><span class="money">$7.42/$10.00</span><div class="bar" style="margin-top:3px"><i style="width:74%"></i></div></td><td><span class="pill" style="color:var(--grn)">active</span></td></tr>
+<tr><td>scraper-eu</td><td><span class="money">$48.90/$50.00</span><div class="bar" style="margin-top:3px"><i style="width:98%;background:var(--red)"></i></div></td><td><span class="pill" style="color:var(--amb)">98% cap</span></td></tr>
+<tr><td>ingest-worker</td><td><span class="money">$0.00/$15.00</span><div class="bar" style="margin-top:3px"><i style="width:0%"></i></div></td><td><span class="pill" style="color:var(--amb)">pending</span></td></tr></table>
+<div class="mut" style="font-size:10.5px;margin-top:6px">14:02:11 research-bot-01 → api.exa.ai <b>$0.012</b> confirmed · 14:01:40 → api.unknown.xyz <b>$0.310</b> <span style="color:var(--red)">blocked</span></div>
+</div></div>
+<p class="mut" style="font-size:12px;margin:4px 0 14px">Dashboard — chip network + slot luôn hiện (I2, I8); hàng pending không có action.</p>
+
+<div class="frame"><div class="fbar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="furl">drawer · payment blocked</span></div>
+<div class="fbody" style="font-size:11.5px">
+<b>Payment</b> <span style="float:right;color:var(--red)">blocked</span>
+<div class="mut" style="margin:6px 0">research-bot-01 → <span class="mono">api.unknown.xyz/v1</span> · <span class="money">$0.310</span></div>
+<div style="border-left:2px solid var(--grn);padding-left:8px;margin:4px 0">① Challenge received <span class="mut">402 · exact · 14:01:40</span></div>
+<div style="border-left:2px solid var(--red);padding-left:8px;margin:4px 0">② Blocked: endpoint not allowed <span class="mut">· 5 checks not reached</span></div>
+<div style="background:var(--grn);color:#08251A;border-radius:7px;padding:5px 10px;display:inline-block;font-weight:700;margin-top:6px">Add api.unknown.xyz to allow list</div>
+<span style="border:1px solid var(--line);border-radius:7px;padding:5px 10px;display:inline-block;margin-left:6px">This block is correct</span>
+</div></div>
+<p class="mut" style="font-size:12px;margin:4px 0">Drawer biến thể blocked — timeline dừng pha 2, hai nút recovery của P3 (R-2/R-3).</p>
+</div>
+</div>
+
+<h3>Bản đồ màn hình → flow</h3>
+<table>
+<tr><th>Màn hình</th><th>Flow phủ</th><th>Điểm bắt buộc giữ khi port sang Next.js</th></tr>
+<tr><td>Sign-in + wallet modal</td><td>F1</td><td>Copy "connecting only reads your address"; ghi chú sandbox-first</td></tr>
+<tr><td>Onboarding 5 bước</td><td>F2, F9</td><td>Nhánh ví-từ-chối; key hiện một lần; test log là SSE thật (chương 8)</td></tr>
+<tr><td>Dashboard</td><td>F3</td><td>Slot chip; hàng pending không có action; bar đỏ ≥95%</td></tr>
+<tr><td>Agent detail 4 tab</td><td>F3–F6</td><td>Nhãn tầng trên từng policy (I3); nút Add budget + extend</td></tr>
+<tr><td>Payments explorer + drawer</td><td>F3, F4</td><td>3 biến thể drawer: confirmed/blocked/unknown đúng timeline 6 pha</td></tr>
+<tr><td>Alerts · Audit · Plan · Settings</td><td>F7, F8 + I5</td><td>Audit 202; trang "If Leash is ever down" giữ nguyên văn</td></tr>
+</table>
+<h3>Design tokens (từ prototype, dùng nguyên)</h3>
+<table>
+<tr><th>Token</th><th>Giá trị</th><th>Dùng cho</th></tr>
+<tr><td>bg / panel / line</td><td class="mono">#12101F · #1A1830 · #2E2A52</td><td>Nền, thẻ, viền</td></tr>
+<tr><td>ink / mut</td><td class="mono">#E9E7F4 · #9B96BE</td><td>Chữ chính/phụ</td></tr>
+<tr><td>grn</td><td class="mono">#14F195</td><td><b>Chỉ</b> tiền + on-chain + primary CTA</td></tr>
+<tr><td>pur / amb / red</td><td class="mono">#9C6BFF · #FFC14D · #FF6B81</td><td>Điều hướng · chờ/signer · nguy hiểm</td></tr>
+<tr><td>font</td><td>Space Grotesk 400/500/700 + IBM Plex Mono</td><td>Mono cho amount, địa chỉ, slot, key</td></tr>
+<tr><td>Ngôn ngữ hai tầng</td><td>viền liền + chấm đặc xanh = on-chain · viền đứt + chấm rỗng vàng = signer</td><td>Mọi nơi hiển thị policy — đây là I3 thành hình</td></tr>
+</table>
+<h3>Luật trạng thái (cột Cấm là phần reviewer soi)</h3>
+<table>
+<tr><th>Trạng thái</th><th>Hiển thị</th><th><b>Cấm</b></th></tr>
+<tr><td>loading/empty</td><td>Skeleton / CTA tạo agent đầu</td><td>Bảng trống câm</td></tr>
+<tr><td>pending · submitted · unknown</td><td>Spinner riêng + "waiting for on-chain confirmation"</td><td>Màu/màn của thành công; gộp với confirmed</td></tr>
+<tr><td>blocked</td><td>Timeline dừng pha 2 + tên rule + 2 nút recovery</td><td>Giấu lý do; giấu next action; nút thêm wildcard</td></tr>
+<tr><td>revoking</td><td>"revoking…" tới khi read-back</td><td>"đã thu hồi" trước read-back (bẫy P5)</td></tr>
+<tr><td>degraded</td><td>Banner trễ Xs</td><td>Ẩn banner cho đẹp</td></tr>
+<tr><td>sandbox</td><td>Chip tím + banner + faucet luôn thấy</td><td>Bất kỳ màn nào không phân biệt được đang ở network nào (I8)</td></tr>
+</table>
+<h3>Copy chuẩn (dùng nguyên văn, tiếng Anh)</h3>
+<table>
+<tr><th>Tình huống</th><th>Copy</th></tr>
+<tr><td>Blocked</td><td>"Leash blocked $0.31 to api.unknown.xyz — not on the allow list. Nothing was signed, nothing moved."</td></tr>
+<tr><td>Unknown</td><td>"This payment timed out before we saw a result. It is neither failed nor confirmed — we keep checking the chain, and it will never be signed twice."</td></tr>
+<tr><td>Ví từ chối</td><td>"The wallet rejected the transaction. Nothing was created and nothing moved."</td></tr>
+<tr><td>Sang mainnet</td><td>"Mainnet. Delegations here move real USDC — caps still protect you."</td></tr>
+</table>
+</section>
+
+<!-- ================= 16 · DOCS GUIDE ================= -->
+<section class="slide" data-sec="UI & Delivery" data-t="16 · Docs guide cho dev">
+<h2>16 · Docs guide — mở repo ngày 1 là chạy được</h2>
+<h3>Monorepo (pnpm)</h3>
+<pre>leash/
+├─ apps/web        <span class="c"># Next.js dashboard — port prototype v2 theo chương 15</span>
+├─ apps/api        <span class="c"># Fastify: routes/, jobs/ (indexer, sweep, alerts), db/migrations/*.sql (DDL chương 12)</span>
+├─ apps/signer     <span class="c"># /v1/sign + KMS + evalPolicy import từ core</span>
+├─ apps/demo-402   <span class="c"># endpoint x402 mẫu cho sandbox (bước test P1)</span>
+└─ packages/core   <span class="c"># types (zod), policy/ (S0–S7 thuần hàm), allowance-adapter.ts ([Q1] cô lập ở đây)</span></pre>
+<h3>Env vars (mỗi biến một dòng, thiếu là app từ chối boot với tên biến rõ ràng)</h3>
+<table>
+<tr><th>Biến</th><th>App</th><th>Ghi chú</th></tr>
+<tr><td class="mono">DATABASE_URL</td><td>api, signer</td><td>Postgres 16; role leash_app đã REVOKE theo DDL</td></tr>
+<tr><td class="mono">RPC_SANDBOX_URL / RPC_MAINNET_URL (+ _FALLBACK)</td><td>api, signer</td><td>Chọn theo network bản ghi — không có biến "RPC_URL" chung (I8)</td></tr>
+<tr><td class="mono">USDC_MINT_SANDBOX / USDC_MINT_MAINNET</td><td>signer</td><td>Kèm tokenProgramId từng mint (bẫy chương 13)</td></tr>
+<tr><td class="mono">KMS_KEY_ARN, AWS_*</td><td>signer</td><td>Envelope encryption agent key</td></tr>
+<tr><td class="mono">TELEGRAM_BOT_TOKEN</td><td>api</td><td>Alerts</td></tr>
+</table>
+<h3>Chạy dev + test</h3>
+<pre>pnpm i && pnpm db:migrate
+pay server demo               <span class="c"># sandbox 402 local của pay-kit (debugger kèm sequence diagram)</span>
+pnpm -r dev                   <span class="c"># web:3000 · api:4000 · signer:4100 · demo-402:4200</span>
+pnpm test                     <span class="c"># vitest: golden vectors S0–S7 (mỗi rule ≥3 vector: pass/fail/biên)</span>
+pnpm e2e:sandbox              <span class="c"># tạo agent → delegate → test payment trên Surfnet — chạy trong CI</span></pre>
+<h3>Runbook sự cố (viết trước, không ứng biến lúc cháy)</h3>
+<table>
+<tr><th>Sự cố</th><th>Triệu chứng</th><th>Làm gì</th></tr>
+<tr><td>RPC chính chết</td><td>read-back trễ, banner degraded bật</td><td>Failover tự động sang _FALLBACK; unknown là trạng thái hạng nhất nên không sai dữ liệu — chỉ trễ</td></tr>
+<tr><td>Signer chết</td><td>agent nhận lỗi mạng ở /v1/sign</td><td>Không có gì được ký = không mất tiền (chặn là an toàn); restart; cap on-chain vẫn cưỡng chế</td></tr>
+<tr><td>Leash sập toàn bộ</td><td>—</td><td>Docs công khai "revoke bằng ví/CLI" (I5) — trỏ khách tới đó, đây là lý do trang Settings có mục này</td></tr>
+<tr><td>Nghi lộ agent key</td><td>payment lạ trong feed</td><td>Kill switch (S7 chặn ngay) → revoke on-chain → rotate key. Thiệt hại trần = remaining của allowance đó</td></tr>
+</table>
+<div class="note"><b>Luật PR (rút từ reject-if chương 17):</b> mọi PR đụng đường tiền phải nêu invariant liên quan trong mô tả; PR đổi <code>allowance-adapter.ts</code> phải kèm kết quả e2e:sandbox.</div>
+</section>
+
+<!-- ================= 17 · DELIVERY ================= -->
+<section class="slide" data-sec="UI & Delivery" data-t="17 · Roadmap & rủi ro">
+<h2>17 · Delivery — roadmap, bằng chứng, rủi ro, câu hỏi mở</h2>
+<h3>Roadmap 4 tuần (owner: Founder; output mở được mỗi tuần, khớp video Eternal)</h3>
+<table>
+<tr><th>Tuần</th><th>Checklist</th><th>Output đo được</th></tr>
+<tr><td><b>W1</b></td><td>☐ Xác minh [Q1] ngày 1, chốt adapter/fallback ☐ monorepo + DDL + demo-402 ☐ delegate/revoke trên <b>Surfnet</b> ☐ read-back activate</td><td>Sandbox: tạo agent, delegate, revoke — explorer + dashboard 3 trạng thái đúng</td></tr>
+<tr><td><b>W2</b></td><td>☐ Signer S0,S1,S5,S6 ☐ vòng P2 với demo-402 ☐ handshake_events + timeline API ☐ mainnet smoke với $1</td><td>Test payment 9-dòng chạy SSE thật trong onboarding; drawer timeline 6 pha</td></tr>
+<tr><td><b>W3</b></td><td>☐ S2–S4,S7 + kill ☐ recovery allow-hosts + suppressions ☐ P4 modify-intents ☐ alerts + audit 202 + sweep</td><td>Video: blocked → một-chạm → lần sau qua; cap $10→$20 không khoảng chết</td></tr>
+<tr><td><b>W4</b></td><td>☐ Port UI states đủ bảng chương 15 ☐ docs revoke-tay (I5) ☐ demo MCP end-to-end mainnet ☐ pitch</td><td>Ví mới toanh → agent trả API thật trong budget $10 &lt;10 phút setup</td></tr>
+</table>
+<h3>Bằng chứng nộp giám khảo (giữ 2 khẳng định phủ định của v1 + 1 mới)</h3>
+<table>
+<tr><th>Chứng minh</th><th>Hình thức</th></tr>
+<tr><td>Enforcement cứng</td><td>Explorer: tx rút vượt cap bị chain từ chối</td></tr>
+<tr><td>Không trả đôi (phủ định)</td><td>Script: cùng challenge 2 lần → 1 signature duy nhất</td></tr>
+<tr><td>Non-custodial (phủ định)</td><td>Repo không có đường nhận key owner; mọi tx treasury có signer = ví owner</td></tr>
+<tr><td>Cách ly network (phủ định, mới)</td><td>Script: key lk_test_ + challenge mainnet → 403 NETWORK_MISMATCH, không có tx nào</td></tr>
+</table>
+<h3>DoD · reject-merge-if</h3>
+<p class="mut">DoD: demo W4 + mọi bảng đúng DDL chương 12 + e2e:sandbox xanh trong CI. <b>Reject nếu:</b> float trong đường tiền (I6) · ghi chain ngoài Signer/ví owner (I1) · success UI thiếu read-back slot (I4) · HTTP ngoài trong đường ký (11) · policy thiếu nhãn tầng (I3) · query payments/allowances không lọc network (I8) · nút recovery thêm quá 1 host (P3).</p>
+<h3>Rủi ro</h3>
+<table>
+<tr><th>Rủi ro</th><th>KN</th><th>Tác động</th><th>Giảm thiểu</th></tr>
+<tr><td>[Q1] interface primitive lệch giả định</td><td>TB</td><td>Cao — chặn W1</td><td>Fallback SPL delegate đã thiết kế sẵn (chương 13) — hạ cấp có kiểm soát, không hoãn</td></tr>
+<tr><td>[Q5] Surfnet không mở RPC công khai ổn định</td><td>TB</td><td>TB — hỏng sandbox-first</td><td>Fallback devnet + faucet USDC devnet; adapter không phân biệt — chỉ đổi URL</td></tr>
+<tr><td>x402 đa version, canonical hoá lệch ([Q4])</td><td>TB</td><td>TB</td><td>Khoá theo (version, hash); test vector từ demo-402 + endpoint thật W2</td></tr>
+<tr><td>Lộ agent key</td><td>Thấp</td><td>Trần = remaining allowance</td><td>KMS, key/agent, runbook chương 16 — chính là giá trị sản phẩm</td></tr>
+<tr><td>Scope 4 chương mới kéo W1 trễ</td><td>TB</td><td>TB</td><td>demo-402 và faucet là code nhỏ (≤1 ngày cộng lại); nếu trễ, cắt OPT trước, không cắt test P1</td></tr>
+</table>
+<h3>Câu hỏi mở</h3>
+<table>
+<tr><th>#</th><th>Câu hỏi</th><th>Người quyết · hạn</th><th>Chặn</th></tr>
+<tr><td>Q1</td><td>Instruction + account layout thật của primitive S&amp;A? (đọc repo/IDL chính thức)</td><td>Founder · W1 ngày 1</td><td>adapter, N-06/N-08, P4</td></tr>
+<tr><td>Q2</td><td>Facilitator nào verify/settle cho demo-402: tự verify hay Kora?</td><td>Founder · trước W2</td><td>Vòng test P1, happy path W2</td></tr>
+<tr><td>Q4</td><td>Trường nào vào canonical hash giữa các version x402?</td><td>Founder · W2 với vector thật</td><td>I7 đường ngoài</td></tr>
+<tr><td>Q5</td><td>RPC + faucet Surfnet công khai cho user Leash, hay Leash tự chạy surfnet instance?</td><td>Founder · W1</td><td>Sandbox-first, N-01</td></tr>
+</table>
+<p class="mut">Q3 của v1 (thứ tự khi tranh remaining) đã chốt: FIFO theo thời điểm ký. Ngoài phạm vi nhắc lại từ chương 2: custody, fiat, privacy/payroll (V2), EVM, marketplace, merchant billing, mobile, RBAC, sidecar. Deck v3.0.</p>
+</section>
+
+</main>
+<script>
+(function(){
+const slides=[...document.querySelectorAll('.slide')],toc=document.getElementById('toc'),
+cnt=document.getElementById('cnt'),prog=document.getElementById('prog');let i=0,ov=false;
+let sec='';slides.forEach((s,k)=>{if(s.dataset.sec!==sec){sec=s.dataset.sec;const g=document.createElement('div');g.className='g';g.textContent=sec;toc.appendChild(g);}
+const a=document.createElement('a');a.textContent=s.dataset.t;a.href='#s'+(k+1);a.onclick=e=>{e.preventDefault();go(k);};toc.appendChild(a);s.id='s'+(k+1);});
+const links=[...toc.querySelectorAll('a')];
+function go(k){i=Math.max(0,Math.min(slides.length-1,k));slides.forEach((s,j)=>s.classList.toggle('on',j===i));
+links.forEach((a,j)=>a.classList.toggle('on',j===i));cnt.textContent=(i+1)+' / '+slides.length;
+prog.style.width=((i+1)/slides.length*100)+'%';if(!ov)document.getElementById('stage').scrollTop=0;
+history.replaceState(null,'','#s'+(i+1));}
+document.getElementById('bPrev').onclick=()=>go(i-1);document.getElementById('bNext').onclick=()=>go(i+1);
+document.getElementById('bOv').onclick=()=>{ov=!ov;document.body.classList.toggle('ov',ov);};
+document.getElementById('bPr').onclick=()=>{document.body.classList.add('ov');setTimeout(()=>window.print(),80);};
+addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(i+1);}
+if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(i-1);}
+if(e.key==='Home')go(0);if(e.key==='End')go(slides.length-1);});
+const h=parseInt((location.hash.match(/^#s(\d+)/)||[])[1]);go(h?h-1:0);
+})();
+</script>
+</body></html>

@@ -1,0 +1,39 @@
+{
+  "rule": "S1", "code": "ALLOWANCE_INACTIVE",
+  "$comment": "S1 cannot be disabled. Note the tier: a failure caused by REVOCATION is on-chain, because Solana enforces it. A failure caused by EXPIRY reports the allowance's stored expiry_tier, which is `signer` under the shipping SPL adapter — invariant I3 does not permit claiming otherwise.",
+  "cases": [
+    { "name": "pass · an active allowance, well inside its expiry",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a revoked allowance is enforced by the chain",
+      "snapshot": { "allowance": { "state": "revoked" } },
+      "expect": { "verdict": "blocked", "failed_rule": "S1", "code": "ALLOWANCE_INACTIVE", "tier": "onchain" } },
+
+    { "name": "fail · a pending allowance has not been read back yet",
+      "$why": "I4: `active` is a claim about the chain. Before the read-back we do not know the delegation exists, so we do not spend against it.",
+      "snapshot": { "allowance": { "state": "pending" } },
+      "expect": { "verdict": "blocked", "failed_rule": "S1", "code": "ALLOWANCE_INACTIVE", "tier": "onchain" } },
+
+    { "name": "boundary · an expiry exactly equal to now is EXPIRED",
+      "$why": "`>=`, not `>`. An allowance that expires at 14:00 does not cover a payment at 14:00:00.000.",
+      "now": "2026-09-11T14:00:00Z",
+      "snapshot": { "taken_at": "2026-09-11T14:00:00Z" },
+      "expect": { "verdict": "blocked", "failed_rule": "S1", "code": "ALLOWANCE_INACTIVE", "tier": "signer" } },
+
+    { "name": "boundary · one millisecond before expiry is still live",
+      "now": "2026-09-11T13:59:59Z",
+      "snapshot": { "taken_at": "2026-09-11T13:59:59Z" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a snapshot 61 seconds old fails closed",
+      "$why": "The specification permits a 60-second cache. A staler view is not evidence that an allowance is live, and failing closed is the safe direction.",
+      "now": "2026-09-04T14:01:01Z",
+      "snapshot": { "taken_at": "2026-09-04T14:00:00Z" },
+      "expect": { "verdict": "blocked", "failed_rule": "S1", "code": "ALLOWANCE_INACTIVE" } },
+
+    { "name": "boundary · a snapshot exactly 60 seconds old is still acceptable",
+      "now": "2026-09-04T14:01:00Z",
+      "snapshot": { "taken_at": "2026-09-04T14:00:00Z" },
+      "expect": { "verdict": "allowed" } }
+  ]
+}

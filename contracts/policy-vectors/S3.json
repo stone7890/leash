@@ -1,0 +1,20 @@
+{
+  "rule": "S3", "code": "PER_TX_LIMIT",
+  "cases": [
+    { "name": "pass · comfortably under the per-payment maximum",
+      "request": { "amount": "0.010000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · EXACTLY the per-payment maximum is allowed",
+      "request": { "amount": "0.250000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · one micro-USDC over the maximum is refused",
+      "request": { "amount": "0.250001" },
+      "expect": { "verdict": "blocked", "failed_rule": "S3", "code": "PER_TX_LIMIT", "tier": "signer" } },
+
+    { "name": "fail · far over the maximum",
+      "request": { "amount": "5.000000" },
+      "expect": { "verdict": "blocked", "failed_rule": "S3", "code": "PER_TX_LIMIT" } }
+  ]
+}

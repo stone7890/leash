@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leash — spend controls for AI agents</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+:root{
+--bg:#12101F;--panel:#1A1830;--panel2:#211E3B;--line:#2E2A52;--ink:#E9E7F4;--mut:#9B96BE;
+--grn:#14F195;--grn-d:#0E3A2B;--pur:#9C6BFF;--amb:#FFC14D;--red:#FF6B81;--red-d:#3A1620;
+--mono:'IBM Plex Mono',ui-monospace,monospace;--r:10px}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 'Space Grotesk',system-ui,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:8px 14px}
+button:hover{border-color:var(--pur)}
+button.pri{background:var(--grn);color:#08251A;border-color:var(--grn);font-weight:700}
+button.pri:hover{filter:brightness(1.08)}
+button.danger{background:var(--red-d);border-color:#6B2735;color:var(--red)}
+button.ghost{background:transparent}
+input,select{font:inherit;color:var(--ink);background:#141227;border:1px solid var(--line);border-radius:8px;padding:9px 12px;width:100%}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--pur);outline-offset:1px}
+.mono{font-family:var(--mono)}
+.mut{color:var(--mut)}
+.money{font-family:var(--mono);font-weight:500}
+.view{display:none}.view.on{display:block}
+/* enforcement-tier language: the one bold idea, used everywhere */
+.tier{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;border-radius:99px;padding:2px 10px}
+.tier i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.tier.chain{border:1px solid var(--grn)}.tier.chain i{background:var(--grn)}
+.tier.signer{border:1px dashed var(--amb)}.tier.signer i{border:1.5px solid var(--amb);background:transparent}
+.card.chain{border:1px solid #1D5C45}
+.card.signer{border:1px dashed #6B571F}
+/* status pills */
+.pill{display:inline-block;border-radius:99px;padding:2px 10px;font-size:11.5px;border:1px solid var(--line);background:var(--panel2)}
+.pill.ok{color:var(--grn);border-color:#1D5C45}.pill.wait{color:var(--amb);border-color:#6B571F}
+.pill.bad{color:var(--red);border-color:#6B2735}.pill.off{color:var(--mut)}
+.bar{height:6px;border-radius:99px;background:#2A2748;overflow:hidden}.bar i{display:block;height:100%;background:var(--grn)}
+.bar.hot i{background:var(--red)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+table{border-collapse:collapse;width:100%}
+th{font-size:12px;color:var(--mut);text-align:left;font-weight:500;padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:11px 12px;border-bottom:1px solid #232045;vertical-align:middle}
+tr.rowlink:hover td{background:#1D1A38;cursor:pointer}
+h1{font-size:30px;line-height:1.15;margin:0 0 8px;font-weight:700}
+h2{font-size:19px;margin:0 0 4px}h3{font-size:15px;margin:0 0 8px}
+a{color:var(--pur)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ---------- auth ---------- */
+#v-auth{display:none;min-height:100vh}#v-auth.on{display:grid;grid-template-columns:1.1fr 1fr}
+.brand-side{padding:56px;display:flex;flex-direction:column;justify-content:space-between;background:
+radial-gradient(700px 500px at 85% -10%,rgba(156,107,255,.16),transparent),
+radial-gradient(600px 420px at -10% 110%,rgba(20,241,149,.10),transparent)}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:.5px}
+.logo svg{display:block}
+.auth-card{margin:auto;width:min(400px,90%);}
+.walletbtn{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:12px 14px;text-align:left}
+.walletbtn b{flex:1}
+.gauge{font-family:var(--mono);font-size:13px;color:var(--mut);margin-top:28px}
+.gauge .g-line{display:flex;align-items:center;gap:10px;margin:10px 0}
+.gauge .g-line .bar{flex:1}
+/* ---------- app shell ---------- */
+#shell{display:none;min-height:100vh}
+#shell.on{display:grid;grid-template-columns:216px 1fr}
+#rail{border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh}
+#rail .logo{padding:4px 10px 16px}
+#rail a{display:flex;gap:10px;align-items:center;color:var(--mut);text-decoration:none;padding:9px 12px;border-radius:8px;font-size:13.5px}
+#rail a.on{color:var(--ink);background:var(--panel2)}
+#rail a:hover{color:var(--ink)}
+#rail .sp{flex:1}
+#topbar{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line)}
+#topbar .sp{flex:1}
+.chip{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:12.5px;background:var(--panel)}
+.content{padding:24px 26px;max-width:1180px}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:2fr 1fr}
+.stat b{font-size:24px;font-family:var(--mono);font-weight:500;display:block}
+.feed{max-height:420px;overflow:auto}
+.feed .f-row{display:flex;gap:10px;align-items:baseline;padding:8px 2px;border-bottom:1px solid #232045;font-size:12.5px}
+.feed .f-t{color:var(--mut);font-family:var(--mono);font-size:11px;white-space:nowrap}
+.drawer{position:fixed;top:0;right:-420px;width:400px;height:100vh;background:var(--panel);border-left:1px solid var(--line);padding:22px;transition:right .25s;z-index:40;overflow:auto}
+.drawer.on{right:0}
+.overlay{position:fixed;inset:0;background:rgba(8,7,15,.6);display:none;z-index:30}
+.overlay.on{display:block}
+.modal{position:fixed;inset:0;display:none;place-items:center;z-index:50}
+.modal.on{display:grid}
+.modal .card{width:min(440px,92%);}
+.steps{display:flex;gap:8px;margin:18px 0 22px}
+.steps span{flex:1;height:4px;border-radius:99px;background:#2A2748}
+.steps span.done{background:var(--grn)}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}
+.kv .k{color:var(--mut)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 0 18px}
+.tabs button{border:none;background:none;border-radius:0;padding:9px 14px;color:var(--mut);border-bottom:2px solid transparent}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--grn)}
+.field{margin-bottom:14px}.field label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{border:1px solid #23405C;background:#13202E;border-radius:var(--r);padding:10px 14px;font-size:12.8px;margin:12px 0}
+.banner{border:1px dashed #6B571F;background:#241D0E;border-radius:var(--r);padding:9px 14px;font-size:12.8px;margin-bottom:16px;display:none}
+.banner.on{display:block}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 18px;font-size:13px;display:none;z-index:60}
+.toast.on{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--amb);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+
+/* v2 additions */
+.chips{display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--line);background:#141227;border-radius:8px;padding:7px}
+.chips input{border:none;background:transparent;padding:4px;width:190px;outline:none}
+.chip-t{display:inline-flex;gap:6px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:12px;font-family:var(--mono)}
+.chip-t b{cursor:pointer;color:var(--mut);font-weight:400}
+.chip-t b:hover{color:var(--red)}
+.preset{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:3px 12px;font-size:12px;cursor:pointer;background:var(--panel2)}
+.preset.on,.preset:hover{border-color:var(--grn);color:var(--grn)}
+.tmpl{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.tmpl button{text-align:left;padding:12px;border-radius:10px}
+.tmpl button.on{border-color:var(--grn)}
+.tmpl b{display:block;margin-bottom:3px}
+.tmpl small{color:var(--mut);font-size:11.5px;line-height:1.35;display:block}
+.envchip{cursor:pointer}
+.envchip.sandbox{border-color:#6B46C1;color:var(--pur)}
+.sandbanner{border:1px solid #4A3380;background:#1E1638;border-radius:var(--r);padding:9px 14px;font-size:12.8px;margin-bottom:16px;display:flex;gap:10px;align-items:center}
+.tl{margin:10px 0;padding-left:2px}
+.tl .tl-r{display:grid;grid-template-columns:20px 1fr;gap:10px;position:relative;padding-bottom:14px}
+.tl .tl-r:before{content:"";position:absolute;left:9px;top:16px;bottom:-2px;width:2px;background:#2A2748}
+.tl .tl-r:last-child:before{display:none}
+.tl .dot2{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);background:var(--panel);display:grid;place-items:center;font-size:10px;z-index:1}
+.tl .ok2{border-color:var(--grn);color:var(--grn)}
+.tl .bad2{border-color:var(--red);color:var(--red)}
+.tl .wait2{border-color:var(--amb)}
+.tl .tl-h{font-size:13px}
+.tl .tl-d{font-size:11.5px;color:var(--mut);font-family:var(--mono)}
+.codetabs{display:flex;gap:4px;margin-bottom:-1px}
+.codetabs button{border-radius:8px 8px 0 0;font-size:12px;padding:6px 12px}
+.codetabs button.on{border-color:var(--grn);color:var(--grn)}
+pre.snip{background:#0B0A14;border:1px solid var(--line);border-radius:0 8px 8px 8px;padding:12px;font-size:11.5px;line-height:1.5;overflow:auto;margin:0}
+.copybtn{float:right;font-size:11px;padding:3px 9px}
+.hslog{background:#0B0A14;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.7;min-height:120px}
+.hslog .ln{opacity:0;animation:fadein .3s forwards}
+@keyframes fadein{to{opacity:1}}
+
+@media(max-width:900px){#v-auth.on{grid-template-columns:1fr}.brand-side{display:none}#shell.on{grid-template-columns:64px 1fr}#rail a span{display:none}#rail .logo b{display:none}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH ============ -->
+<section id="v-auth" class="view on">
+  <div class="brand-side">
+    <div class="logo"><svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2l9 4v7c0 5.2-3.8 9.4-9 11-5.2-1.6-9-5.8-9-11V6l9-4z" fill="none" stroke="#14F195" stroke-width="2"/><path d="M8.5 13.5c2-2.6 7-2.6 9 0" fill="none" stroke="#9C6BFF" stroke-width="2" stroke-linecap="round"/></svg><b>Leash</b></div>
+    <div>
+      <h1>Give every agent a budget.<br>Not your wallet.</h1>
+      <p class="mut" style="max-width:46ch">Delegate an on-chain spending cap to each AI agent. It pays for APIs over x402 by itself — inside the limits you set, with every cent attributed.</p>
+      <div class="gauge">
+        <div class="g-line"><span>research-bot-01</span><div class="bar"><i style="width:74%"></i></div><span>$7.42 / $10.00</span></div>
+        <div class="g-line"><span>scraper-eu</span><div class="bar hot"><i style="width:98%"></i></div><span>$48.90 / $50.00</span></div>
+        <div class="g-line"><span>ops-batch</span><div class="bar"><i style="width:12%"></i></div><span>$2.96 / $25.00</span></div>
+      </div>
+    </div>
+    <p class="mut" style="font-size:12px">Non-custodial. Your funds stay in your wallet; Leash holds keys to nothing.</p>
+  </div>
+  <div style="display:flex">
+    <div class="auth-card">
+      <h2>Sign in</h2>
+      <p class="mut">Your wallet is your account. Sign a message to prove it's you — no password, no email.</p>
+      <button class="walletbtn" onclick="openModal('m-wallet')"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="5" width="16" height="11" rx="2.5" fill="none" stroke="#9C6BFF" stroke-width="1.6"/><circle cx="14" cy="10.5" r="1.4" fill="#14F195"/></svg><b>Connect wallet</b><span class="mut">Solana</span></button>
+      <p class="mut" style="font-size:12px;margin-top:16px">Connecting only reads your address. Nothing moves without a transaction you sign.</p>
+      <p class="mut" style="font-size:12px">First time? You'll start in the sandbox — a test network with play-money USDC. Nothing real until you switch.</p>
+    </div>
+  </div>
+</section>
+
+<div class="modal" id="m-wallet"><div class="card">
+  <h3>Choose a wallet</h3>
+  <button class="walletbtn" onclick="connectWallet('Phantom')"><b>Phantom</b><span class="mut">detected</span></button>
+  <button class="walletbtn" onclick="connectWallet('Backpack')"><b>Backpack</b></button>
+  <button class="walletbtn" onclick="connectWallet('Solflare')"><b>Solflare</b></button>
+  <p class="mut" style="font-size:12px;margin-top:12px">Leash never asks for your seed phrase.</p>
+  <button class="ghost" style="margin-top:6px" onclick="closeModals()">Cancel</button>
+</div></div>
+
+<!-- ============ ONBOARDING (5 steps) ============ -->
+<section id="v-onboard" class="view">
+  <div style="max-width:600px;margin:5vh auto;padding:0 18px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="logo" style="flex:1"><svg width="22" height="22" viewBox="0 0 26 26"><path d="M13 2l9 4v7c0 5.2-3.8 9.4-9 11-5.2-1.6-9-5.8-9-11V6l9-4z" fill="none" stroke="#14F195" stroke-width="2"/></svg><b>Set up an agent</b></div>
+      <span class="chip envchip sandbox" id="ob-env-chip">Sandbox · test USDC</span>
+    </div>
+    <div class="steps"><span id="st1" class="done"></span><span id="st2"></span><span id="st3"></span><span id="st4"></span><span id="st5"></span></div>
+
+    <div id="ob-1">
+      <h2>1 · Start from a template</h2>
+      <p class="mut">Templates prefill sensible rules. Everything stays editable.</p>
+      <div class="tmpl">
+        <button class="on" onclick="pickTmpl(this,'research')"><b>Research agent</b><small>Search &amp; content APIs. Small payments, tight per-call limit.</small></button>
+        <button onclick="pickTmpl(this,'scraper')"><b>Scraper / browser</b><small>Browser sessions. Larger per-call, strict velocity.</small></button>
+        <button onclick="pickTmpl(this,'blank')"><b>Start blank</b><small>No prefills. You set every rule yourself.</small></button>
+      </div>
+      <div class="field"><label for="ob-name">Agent name</label><input id="ob-name" value="research-bot-01"></div>
+      <div class="field"><label for="ob-run">Runs as</label><select id="ob-run"><option>MCP server (Claude, etc.)</option><option>CLI / script (pay, curl)</option><option>Hosted service</option></select></div>
+      <div class="note">Leash generates a dedicated keypair for this agent inside the signer. The key never leaves it — your agent gets an API key instead.</div>
+      <button class="pri" onclick="obGo(2)">Continue</button>
+    </div>
+
+    <div id="ob-2" style="display:none">
+      <h2>2 · Budget and rules</h2>
+      <div class="field" style="margin-top:14px">
+        <label>Spending cap <span class="tier chain" style="margin-left:6px"><i></i>on-chain</span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="ob-cap" class="mono" type="number" value="10" min="1" style="width:110px" oninput="capCalc()"> <span class="mut">USDC</span>
+          <span class="preset" onclick="setCap(5,this)">$5</span><span class="preset on" onclick="setCap(10,this)">$10</span><span class="preset" onclick="setCap(50,this)">$50</span>
+        </div>
+        <div class="mut" style="font-size:12px;margin-top:6px"><span id="cap-est">≈ 830 Exa searches at $0.012 each</span> · Your test balance: <b class="money" style="color:var(--grn)">100.00 USDC</b> <a href="#" onclick="openModal('m-faucet');return false">faucet</a></div>
+      </div>
+      <div class="field"><label>Expires <span class="tier chain" style="margin-left:6px"><i></i>on-chain</span></label><select id="ob-exp" style="width:180px"><option>7 days</option><option>24 hours</option><option>30 days</option></select></div>
+      <div class="field"><label>Allowed endpoints <span class="tier signer" style="margin-left:6px"><i></i>signer</span></label>
+        <div class="chips" id="ob-chips"><span class="chip-t">api.exa.ai <b onclick="this.parentNode.remove()">×</b></span><span class="chip-t">api.helius.dev <b onclick="this.parentNode.remove()">×</b></span><input id="chip-in" placeholder="add a host, press Enter"></div>
+        <div class="mut" style="font-size:12px;margin-top:5px">Type <span class="mono">*</span> to allow every endpoint — we'll flag the agent with a warning if you do.</div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Per-payment max <span class="tier signer" style="margin-left:6px"><i></i>signer</span></label><input id="ob-ptx" class="mono" value="$0.25"></div>
+        <div class="field"><label>10-minute limit <span class="tier signer" style="margin-left:6px"><i></i>signer</span></label><input id="ob-vel" class="mono" value="$1.00"></div>
+      </div>
+      <div class="note"><span class="tier chain"><i></i>on-chain</span> rules are enforced by Solana itself and can't be bypassed. <span class="tier signer"><i></i>signer</span> rules are enforced by Leash before each payment is signed.</div>
+      <button class="ghost" onclick="obGo(1)">Back</button> <button class="pri" onclick="obGo(3)">Review &amp; sign</button>
+    </div>
+
+    <div id="ob-3" style="display:none">
+      <h2>3 · Sign the delegation</h2>
+      <p class="mut">One transaction from your wallet creates the on-chain allowance. Funds stay put — you're granting a capped permission, not sending money.</p>
+      <div class="card" style="margin:14px 0"><div class="kv">
+        <span class="k">Agent</span><span id="rv-name">research-bot-01</span>
+        <span class="k">Network</span><span id="rv-net">Sandbox (Surfnet)</span>
+        <span class="k">Cap</span><span class="money" id="rv-cap">$10.00 USDC</span>
+        <span class="k">Expires</span><span>in 7 days</span>
+        <span class="k">Delegate to</span><span class="mono" style="font-size:12px">Gk7v…tR2m (agent key)</span>
+        <span class="k">Network fee</span><span class="money">~$0.0002 · paid by you</span>
+      </div></div>
+      <div id="ob-signrow"><button class="ghost" onclick="obGo(2)">Back</button> <button class="pri" onclick="obSign()">Sign in wallet</button></div>
+      <div id="ob-pending" style="display:none" class="note"><span class="spin"></span> Waiting for on-chain confirmation… Submitted is not confirmed — this flips the moment the allowance is readable on Solana.</div>
+      <div id="ob-err" style="display:none" class="note" style="border-color:#6B2735"><b style="color:var(--red)">The wallet rejected the transaction.</b> Nothing was created and nothing moved. <button class="ghost" onclick="obSign()" style="margin-left:8px">Try again</button></div>
+      <div id="ob-done3" style="display:none">
+        <div class="note" style="border-color:#1D5C45;background:#0F2A20">Allowance is live on-chain. <span class="mono" style="font-size:12px">slot 356 442 108 · 3xk…9Qe</span> <a href="#" onclick="return false">receipt</a></div>
+        <button class="pri" onclick="obGo(4)">Connect your agent</button>
+      </div>
+    </div>
+
+    <div id="ob-4" style="display:none">
+      <h2>4 · Point your agent at Leash</h2>
+      <p class="mut">Your agent authenticates with this key — shown once, store it now.</p>
+      <div class="mono" style="font-size:12.5px;margin:8px 0;background:#0B0A14;border:1px solid var(--line);border-radius:8px;padding:9px 12px">lk_test_9f2c41ab…e77d <button class="copybtn" onclick="toast('Key copied.')">Copy</button></div>
+      <div class="codetabs"><button class="on" onclick="snip(this,'sn-mcp')">MCP (Claude)</button><button onclick="snip(this,'sn-cli')">CLI / pay</button><button onclick="snip(this,'sn-node')">Node</button></div>
+      <pre class="snip" id="sn-mcp">// claude_desktop_config.json
+{ "mcpServers": { "leash": {
+    "command": "npx", "args": ["@leash/mcp"],
+    "env": { "LEASH_SIGNER": "https://sign.leash.dev",
+             "LEASH_AGENT_KEY": "lk_test_9f2c…" } } } }</pre>
+      <pre class="snip" id="sn-cli" style="display:none">export LEASH_SIGNER=https://sign.leash.dev
+export LEASH_AGENT_KEY=lk_test_9f2c…
+pay curl -i https://api.exa.ai/search?q=solana   # 402 → sign → 200</pre>
+      <pre class="snip" id="sn-node" style="display:none">import { LeashSigner } from "@leash/sdk";
+const signer = new LeashSigner(process.env.LEASH_AGENT_KEY);
+const res = await signer.fetch("https://api.exa.ai/search?q=solana");</pre>
+      <div style="margin-top:14px"><button class="ghost" onclick="obGo(3)">Back</button> <button class="pri" onclick="obGo(5);runHandshake()">Run a test payment</button> <button class="ghost" onclick="enterApp()">Skip — open dashboard</button></div>
+    </div>
+
+    <div id="ob-5" style="display:none">
+      <h2>5 · Watch the first payment</h2>
+      <p class="mut">We're calling a sample paid endpoint on the sandbox as your agent. This is the exact 402 handshake it will run in production.</p>
+      <div class="hslog" id="hslog"><span class="mut">waiting for the first request…</span></div>
+      <div id="ob-final" style="display:none;margin-top:14px">
+        <div class="note" style="border-color:#1D5C45;background:#0F2A20">Your agent is wired up. Cap $10.00 · $0.010 spent · <a href="#" onclick="return false">receipt</a></div>
+        <button class="pri" onclick="enterApp()">Open dashboard</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="modal" id="m-faucet"><div class="card">
+  <h3>Sandbox faucet</h3>
+  <p class="mut" style="font-size:13px">Test USDC on the Surfnet sandbox. No real value — spend it freely.</p>
+  <button class="pri" onclick="closeModals();toast('100 test USDC sent to your wallet.')">Send me 100 test USDC</button>
+  <button class="ghost" onclick="closeModals()">Close</button>
+</div></div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="shell">
+<nav id="rail">
+  <div class="logo"><svg width="22" height="22" viewBox="0 0 26 26"><path d="M13 2l9 4v7c0 5.2-3.8 9.4-9 11-5.2-1.6-9-5.8-9-11V6l9-4z" fill="none" stroke="#14F195" stroke-width="2"/><path d="M8.5 13.5c2-2.6 7-2.6 9 0" fill="none" stroke="#9C6BFF" stroke-width="2" stroke-linecap="round"/></svg><b>Leash</b></div>
+  <a href="#" data-nav="dash" class="on"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span>Agents</span></a>
+  <a href="#" data-nav="pay"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 8h10M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="8" r="1.3" fill="currentColor"/></svg><span>Payments</span></a>
+  <a href="#" data-nav="alerts"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 2a4 4 0 014 4v3l1.5 2.5h-11L4 9V6a4 4 0 014-4zM6.5 13a1.5 1.5 0 003 0" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span>Alerts</span></a>
+  <a href="#" data-nav="audit"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 1.5h7l3 3v10H3z M10 1.5v3h3 M5.5 8h5M5.5 11h5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span>Audit</span></a>
+  <div class="sp"></div>
+  <a href="#" data-nav="billing"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6.5h13" stroke="currentColor" stroke-width="1.4"/></svg><span>Plan</span></a>
+  <a href="#" data-nav="settings"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4" stroke="currentColor" stroke-width="1.4"/></svg><span>Settings</span></a>
+</nav>
+<div>
+  <div id="topbar">
+    <b id="crumb">Agents</b><span class="sp"></span>
+    <span class="chip envchip sandbox" id="envchip" onclick="toggleEnv()" title="Switch network">Sandbox</span>
+    <span class="chip mono" style="font-size:11.5px" title="latest indexed slot">slot 356 442 108</span>
+    <span class="chip"><span style="width:8px;height:8px;border-radius:50%;background:var(--grn);display:inline-block"></span><span class="mono" style="font-size:12px">7f3K…mQ9x</span></span>
+    <button class="ghost" onclick="signOut()" style="font-size:12.5px">Sign out</button>
+  </div>
+  <div class="content">
+    <div class="sandbanner" id="sandbanner"><span>You're on the <b>sandbox</b> — Surfnet test network, play-money USDC.</span><a href="#" onclick="openModal('m-faucet');return false">Faucet</a><span class="sp" style="flex:1"></span><button class="ghost" style="font-size:12px" onclick="toggleEnv()">Switch to mainnet</button></div>
+    <div class="banner" id="degraded">On-chain data is lagging 14s behind — balances may be stale. Payments are unaffected.</div>
+
+    <!-- ===== DASHBOARD ===== -->
+    <section class="view on" id="v-dash">
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="card stat"><b class="money">$11.21</b><span class="mut">spent today</span></div>
+        <div class="card stat"><b>3</b><span class="mut">active agents</span></div>
+        <div class="card stat"><b>128</b><span class="mut">payments · 24h</span></div>
+        <div class="card stat"><b style="color:var(--red)">2</b><span class="mut">blocked by rules · 24h</span></div>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <div style="display:flex;align-items:center;margin-bottom:6px"><h3 style="margin:0">Agents</h3><span class="sp" style="flex:1"></span><button class="pri" onclick="startOnboard()">New agent</button></div>
+          <table>
+            <tr><th>Agent</th><th style="width:34%">Budget</th><th>Expires</th><th>Status</th></tr>
+            <tr class="rowlink" onclick="openAgent()"><td>research-bot-01<div class="mut" style="font-size:11.5px">MCP · api.exa.ai +1</div></td>
+              <td><span class="money" style="font-size:12.5px">$7.42 / $10.00</span><div class="bar" style="margin-top:5px"><i style="width:74%"></i></div></td>
+              <td>7 days</td><td><span class="pill ok">active</span></td></tr>
+            <tr class="rowlink" onclick="openAgent()"><td>scraper-eu<div class="mut" style="font-size:11.5px">CLI · api.browserbase.com</div></td>
+              <td><span class="money" style="font-size:12.5px">$48.90 / $50.00</span><div class="bar hot" style="margin-top:5px"><i style="width:98%"></i></div></td>
+              <td><span style="color:var(--amb)">12 hours</span></td><td><span class="pill wait">98% of cap</span></td></tr>
+            <tr class="rowlink" onclick="openAgent()"><td>ops-batch<div class="mut" style="font-size:11.5px">Hosted · api.helius.dev</div></td>
+              <td><span class="money" style="font-size:12.5px">$2.96 / $25.00</span><div class="bar" style="margin-top:5px"><i style="width:12%"></i></div></td>
+              <td>30 days</td><td><span class="pill ok">active</span></td></tr>
+            <tr><td>ingest-worker<div class="mut" style="font-size:11.5px">awaiting confirmation</div></td>
+              <td><span class="money" style="font-size:12.5px">$0.00 / $15.00</span><div class="bar" style="margin-top:5px"><i style="width:0%"></i></div></td>
+              <td>—</td><td><span class="pill wait"><span class="spin" style="border-color:var(--amb);border-top-color:transparent"></span> pending</span></td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Live feed</h3>
+          <div class="feed" id="feed">
+            <div class="f-row"><span class="f-t">14:02:11</span><span class="rowlink" onclick="openDrawer('ok')"><b>research-bot-01</b> → api.exa.ai <span class="money">$0.012</span> <span class="pill ok">confirmed</span></span></div>
+            <div class="f-row"><span class="f-t">14:01:58</span><span><b>scraper-eu</b> → api.browserbase.com <span class="money">$0.050</span> <span class="pill wait">submitted</span></span></div>
+            <div class="f-row"><span class="f-t">14:01:40</span><span class="rowlink" onclick="openDrawer('blocked')"><b>research-bot-01</b> → api.unknown.xyz <span class="money">$0.310</span> <span class="pill bad">blocked · not allowed</span></span></div>
+            <div class="f-row"><span class="f-t">14:00:07</span><span><b>ops-batch</b> → api.helius.dev <span class="money">$0.004</span> <span class="pill ok">confirmed</span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== AGENT DETAIL ===== -->
+    <section class="view" id="v-agent">
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="#" onclick="nav('dash');return false" class="mut" style="text-decoration:none">← Agents</a>
+        <h2 style="margin:0">research-bot-01</h2>
+        <span class="pill ok" id="ag-state">active</span>
+        <span class="sp" style="flex:1"></span>
+        <button onclick="openModal('m-topup')">Add budget</button>
+        <button class="danger" id="killbtn" onclick="openModal('m-kill')">Kill switch</button>
+      </div>
+      <div class="tabs">
+        <button class="on" data-tab="t-over">Overview</button><button data-tab="t-pay">Payments</button><button data-tab="t-pol">Rules</button><button data-tab="t-set">Agent settings</button>
+      </div>
+
+      <div id="t-over" class="tabv">
+        <div class="grid g3">
+          <div class="card chain">
+            <div style="display:flex;align-items:center"><h3 style="margin:0">Allowance</h3><span class="sp" style="flex:1"></span><span class="tier chain"><i></i>on-chain</span></div>
+            <div class="money" style="font-size:22px;margin:10px 0 4px" id="alw-num">$7.42 <span class="mut" style="font-size:13px">of $10.00</span></div>
+            <div class="bar"><i style="width:74%" id="alw-bar"></i></div>
+            <div class="kv" style="margin-top:12px">
+              <span class="k">Address</span><span class="mono" style="font-size:12px">3xk…9Qe <a href="#" onclick="return false">explorer</a></span>
+              <span class="k">Expires</span><span>Sep 11, 14:00 <a href="#" onclick="openModal('m-topup');return false">extend</a></span>
+              <span class="k">Read at</span><span class="mono" style="font-size:12px">slot 356 442 108</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Last 24h</h3>
+            <div class="kv" style="margin-top:8px">
+              <span class="k">Payments</span><span>61 confirmed</span>
+              <span class="k">Spent</span><span class="money">$1.86</span>
+              <span class="k">Blocked</span><span style="color:var(--red)">1 (endpoint not allowed)</span>
+              <span class="k">Avg / payment</span><span class="money">$0.030</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Spend by endpoint · 7d</h3>
+            <div class="kv" style="margin-top:8px;grid-template-columns:1fr auto">
+              <span class="mono" style="font-size:12px">api.exa.ai</span><span class="money">$2.11</span>
+              <span class="mono" style="font-size:12px">api.helius.dev</span><span class="money">$0.47</span>
+            </div>
+            <div class="mut" style="font-size:12px;margin-top:10px">At this pace the cap lasts ~9 more days — past expiry.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="t-pay" class="tabv" style="display:none">
+        <table>
+          <tr><th>Time</th><th>Endpoint</th><th>Amount</th><th>Status</th><th>Signature</th></tr>
+          <tr class="rowlink" onclick="openDrawer('ok')"><td class="mono" style="font-size:12px">14:02:11</td><td class="mono" style="font-size:12px">api.exa.ai/search</td><td class="money">$0.012</td><td><span class="pill ok">confirmed</span></td><td class="mono" style="font-size:12px">5Kd…w2P</td></tr>
+          <tr class="rowlink" onclick="openDrawer('unknown')"><td class="mono" style="font-size:12px">13:58:47</td><td class="mono" style="font-size:12px">api.exa.ai/contents</td><td class="money">$0.008</td><td><span class="pill wait">unknown</span></td><td class="mono" style="font-size:12px">9mT…c4R</td></tr>
+          <tr class="rowlink" onclick="openDrawer('blocked')"><td class="mono" style="font-size:12px">13:51:02</td><td class="mono" style="font-size:12px">api.unknown.xyz/v1</td><td class="money">$0.310</td><td><span class="pill bad">blocked</span></td><td class="mut" style="font-size:12px">not signed</td></tr>
+        </table>
+        <div class="note">An <b>unknown</b> payment timed out before we saw the result. It is neither failed nor confirmed — Leash re-checks it against Solana until it resolves. It will never be signed twice.</div>
+      </div>
+
+      <div id="t-pol" class="tabv" style="display:none">
+        <div class="grid g2" style="grid-template-columns:1fr 1fr">
+          <div class="card chain">
+            <div style="display:flex"><h3 style="margin:0">Enforced by Solana</h3><span class="sp" style="flex:1"></span><span class="tier chain"><i></i>on-chain</span></div>
+            <p class="mut" style="font-size:12.5px">Cannot be bypassed — not by the agent, not by Leash.</p>
+            <div class="kv"><span class="k">Spending cap</span><span class="money">$10.00 USDC</span><span class="k">Expires</span><span>Sep 11, 14:00</span></div>
+            <button style="margin-top:12px" onclick="openModal('m-topup')">Change cap or expiry</button>
+          </div>
+          <div class="card signer">
+            <div style="display:flex"><h3 style="margin:0">Enforced by Leash signer</h3><span class="sp" style="flex:1"></span><span class="tier signer"><i></i>signer</span></div>
+            <p class="mut" style="font-size:12.5px">Checked before every signature. Applies to the next payment after you save.</p>
+            <div class="field"><label>Allowed endpoints</label>
+              <div class="chips" id="pol-chips"><span class="chip-t">api.exa.ai <b onclick="this.parentNode.remove()">×</b></span><span class="chip-t">api.helius.dev <b onclick="this.parentNode.remove()">×</b></span><input placeholder="add a host, press Enter" onkeydown="chipKey(event,this)"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Per-payment max</label><input class="mono" value="$0.25"></div>
+              <div class="field"><label>10-minute limit</label><input class="mono" value="$1.00"></div>
+            </div>
+            <button class="pri" onclick="toast('Rules saved. In effect from the next payment.')">Save rules</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="t-set" class="tabv" style="display:none">
+        <div class="card" style="max-width:560px">
+          <h3>Agent API key</h3>
+          <p class="mut" style="font-size:12.5px">Your agent authenticates to the signer with this key. It was shown once at creation — rotating it invalidates the old one immediately.</p>
+          <div class="mono" style="font-size:12.5px;margin:8px 0">lk_test_••••••••••••9f2c</div>
+          <button onclick="toast('New key generated. Copy it now — it will not be shown again.')">Rotate key</button>
+          <h3 style="margin-top:20px">Setup snippets</h3>
+          <p class="mut" style="font-size:12.5px">The same MCP / CLI / Node snippets from onboarding, always available here.</p>
+          <button onclick="toast('Snippets copied for MCP.')">Copy MCP config</button>
+          <h3 style="margin-top:20px">Rename</h3>
+          <div class="field"><input value="research-bot-01"></div>
+          <button onclick="toast('Saved.')">Save name</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PAYMENTS / ALERTS / AUDIT / BILLING / SETTINGS ===== -->
+    <section class="view" id="v-pay">
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <select style="width:auto"><option>All agents</option><option>research-bot-01</option><option>scraper-eu</option><option>ops-batch</option></select>
+        <select style="width:auto"><option>All statuses</option><option>confirmed</option><option>submitted</option><option>unknown</option><option>blocked</option><option>failed</option></select>
+        <input placeholder="Filter by endpoint…" style="width:220px">
+        <span class="sp" style="flex:1"></span><span class="chip mono" style="font-size:11.5px">128 payments · 24h</span>
+      </div>
+      <div class="card">
+        <table>
+          <tr><th>Time</th><th>Agent</th><th>Endpoint</th><th>Amount</th><th>Status</th></tr>
+          <tr class="rowlink" onclick="openDrawer('ok')"><td class="mono" style="font-size:12px">14:02:11</td><td>research-bot-01</td><td class="mono" style="font-size:12px">api.exa.ai/search</td><td class="money">$0.012</td><td><span class="pill ok">confirmed</span></td></tr>
+          <tr class="rowlink" onclick="openDrawer('unknown')"><td class="mono" style="font-size:12px">14:01:58</td><td>scraper-eu</td><td class="mono" style="font-size:12px">api.browserbase.com/session</td><td class="money">$0.050</td><td><span class="pill wait">submitted</span></td></tr>
+          <tr class="rowlink" onclick="openDrawer('blocked')"><td class="mono" style="font-size:12px">14:01:40</td><td>research-bot-01</td><td class="mono" style="font-size:12px">api.unknown.xyz/v1</td><td class="money">$0.310</td><td><span class="pill bad">blocked</span></td></tr>
+          <tr class="rowlink" onclick="openDrawer('ok')"><td class="mono" style="font-size:12px">13:44:03</td><td>ops-batch</td><td class="mono" style="font-size:12px">api.helius.dev/rpc</td><td class="money">$0.004</td><td><span class="pill ok">confirmed</span></td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="v-alerts">
+      <div class="grid g2" style="grid-template-columns:1fr 1fr;max-width:980px">
+        <div class="card">
+          <h3>When to alert</h3>
+          <div class="field" style="margin-top:10px"><label>Budget warning at</label><select><option>80% of cap</option><option>50% of cap</option><option>95% of cap</option></select></div>
+          <div class="field"><label>Budget critical at</label><select><option>95% of cap</option><option>90% of cap</option></select></div>
+          <label style="display:flex;gap:8px;font-size:13px;margin:10px 0"><input type="checkbox" checked style="width:auto"> A payment is blocked by a rule</label>
+          <label style="display:flex;gap:8px;font-size:13px;margin:10px 0"><input type="checkbox" checked style="width:auto"> An agent pays a never-seen endpoint</label>
+          <label style="display:flex;gap:8px;font-size:13px;margin:10px 0"><input type="checkbox" checked style="width:auto"> Allowance expires within 24h</label>
+          <button class="pri" onclick="toast('Alert rules saved.')">Save</button>
+        </div>
+        <div class="card">
+          <h3>Where to send</h3>
+          <div class="field" style="margin-top:10px"><label>Telegram</label><div style="display:flex;gap:8px"><input class="mono" value="@leash_alerts_bot connected" disabled><button onclick="toast('Telegram disconnected.')">Disconnect</button></div></div>
+          <div class="field"><label>Webhook</label><div style="display:flex;gap:8px"><input class="mono" placeholder="https://ops.yourco.dev/hooks/leash"><button onclick="toast('Webhook test sent — expect a POST within 30s.')">Test</button></div></div>
+          <div class="note">Alerts fire from the indexer within 30 seconds of the on-chain event they describe.</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;max-width:980px">
+        <h3>Recent alerts</h3>
+        <table>
+          <tr><th>Time</th><th>Alert</th><th>Sent to</th></tr>
+          <tr><td class="mono" style="font-size:12px">13:51</td><td><b>scraper-eu</b> reached 95% of its cap ($48.90 / $50.00)</td><td>Telegram</td></tr>
+          <tr><td class="mono" style="font-size:12px">13:51</td><td>Blocked: <b>research-bot-01</b> tried api.unknown.xyz — not on its allow list</td><td>Telegram</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="v-audit">
+      <div class="card" style="max-width:640px">
+        <h3>Export audit trail</h3>
+        <p class="mut" style="font-size:12.5px">Every payment with its agent, endpoint, amount, status history and on-chain signature. CSV, one row per payment.</p>
+        <div class="row2" style="margin-top:10px">
+          <div class="field"><label>From</label><input type="date" value="2026-08-01"></div>
+          <div class="field"><label>To</label><input type="date" value="2026-09-04"></div>
+        </div>
+        <button class="pri" onclick="queueExport()">Prepare export</button>
+        <div class="note">Large ranges take a minute. The export is prepared in the background — the button queues it, this list shows it when it's ready.</div>
+      </div>
+      <div class="card" style="max-width:640px;margin-top:14px">
+        <h3>Exports</h3>
+        <table id="jobs">
+          <tr><th>Range</th><th>Requested</th><th>Status</th><th></th></tr>
+          <tr><td class="mono" style="font-size:12px">Jul 1 – Jul 31</td><td class="mono" style="font-size:12px">Aug 02, 09:14</td><td><span class="pill ok">ready</span></td><td><a href="#" onclick="return false">Download CSV</a></td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="v-billing">
+      <div class="grid g3" style="max-width:980px">
+        <div class="card"><h3>Free</h3><div class="money" style="font-size:24px;margin:6px 0">$0</div><p class="mut" style="font-size:12.5px">1 agent, 1 budget, live feed. For trying things out.</p><span class="pill off">current plan</span></div>
+        <div class="card" style="border-color:#1D5C45"><h3 style="color:var(--grn)">Pro</h3><div class="money" style="font-size:24px;margin:6px 0">$29<span class="mut" style="font-size:13px">/mo</span></div><p class="mut" style="font-size:12.5px">10 agents, rules engine, alerts, kill switch, 90-day audit history.</p><button class="pri" onclick="toast('Upgrade builds an on-chain subscription for your wallet to approve.')">Upgrade</button></div>
+        <div class="card"><h3>Team</h3><div class="money" style="font-size:24px;margin:6px 0">$149<span class="mut" style="font-size:13px">/mo</span></div><p class="mut" style="font-size:12.5px">Unlimited agents, API access, exportable audit, webhooks.</p><button onclick="toast('Upgrade builds an on-chain subscription for your wallet to approve.')">Upgrade</button></div>
+      </div>
+      <div class="note" style="max-width:980px">Paid plans are billed on-chain in USDC through a Solana subscription you approve from your wallet — the same primitive Leash builds on. Cancel any time by revoking it; access runs to the end of the period.</div>
+    </section>
+
+    <section class="view" id="v-settings">
+      <div class="grid g2" style="grid-template-columns:1fr 1fr;max-width:980px">
+        <div class="card">
+          <h3>Workspace</h3>
+          <div class="kv" style="margin-top:8px">
+            <span class="k">Owner wallet</span><span class="mono" style="font-size:12px">7f3K…mQ9x</span>
+            <span class="k">Network</span><span id="set-net">Sandbox (Surfnet)</span>
+            <span class="k">Currency</span><span>USDC</span>
+          </div>
+          <div class="field" style="margin-top:12px"><label>Workspace name</label><input value="my-agents"></div>
+          <button onclick="toast('Saved.')">Save</button>
+        </div>
+        <div class="card">
+          <h3>If Leash is ever down</h3>
+          <p class="mut" style="font-size:12.5px">Your control doesn't depend on us. Every allowance can be revoked directly from your wallet or the Solana CLI — no Leash involved.</p>
+          <a href="#" onclick="return false">Read the self-serve revoke guide</a>
+          <div class="note" style="margin-top:12px">Caps and expiries keep being enforced by Solana no matter what happens to Leash. Only signer-level rules pause if the signer is unreachable — and an unreachable signer signs nothing.</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</div>
+
+<!-- modals -->
+<div class="modal" id="m-kill"><div class="card">
+  <h3 style="color:var(--red)">Stop research-bot-01?</h3>
+  <p class="mut" style="font-size:13px">Two things happen, in order:</p>
+  <div class="kv" style="margin:10px 0">
+    <span class="k">Instantly</span><span>The signer refuses every new payment from this agent.</span>
+    <span class="k">On-chain</span><span>Your wallet signs a revoke — once confirmed, the allowance is gone even if Leash is offline.</span>
+  </div>
+  <button class="ghost" onclick="closeModals()">Cancel</button>
+  <button class="danger" onclick="killAgent()">Stop and revoke</button>
+</div></div>
+
+<div class="modal" id="m-topup"><div class="card">
+  <h3>Change budget for research-bot-01</h3>
+  <p class="mut" style="font-size:13px">Raising the cap or extending expiry is a new transaction your wallet signs. The current allowance keeps working until it confirms.</p>
+  <div class="row2" style="margin-top:10px">
+    <div class="field"><label>New cap <span class="tier chain" style="margin-left:4px"><i></i>on-chain</span></label><input class="mono" type="number" value="20" style="width:100%"></div>
+    <div class="field"><label>New expiry</label><select><option>+7 days</option><option>+30 days</option></select></div>
+  </div>
+  <div class="mut" style="font-size:12px;margin-bottom:10px">Your balance: <b class="money" style="color:var(--grn)">100.00 USDC</b> · network fee ~$0.0002</div>
+  <button class="ghost" onclick="closeModals()">Cancel</button>
+  <button class="pri" onclick="topup()">Sign in wallet</button>
+</div></div>
+
+<div class="overlay" id="ovl" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div style="display:flex;align-items:center"><h3 style="margin:0">Payment</h3><span class="sp" style="flex:1"></span><button class="ghost" onclick="closeDrawer()">Close</button></div>
+  <div id="dw-body"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function $(id){return document.getElementById(id)}
+function openModal(id){$(id).classList.add('on')}
+function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.classList.remove('on'))}
+function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('on'),3200)}
+function connectWallet(w){closeModals();toast(w+' connected — sign the message in your wallet to continue.');setTimeout(()=>{$('v-auth').classList.remove('on');$('v-onboard').classList.add('on');scrollTo(0,0)},900)}
+/* onboarding */
+const tmplData={research:{cap:10,ptx:'$0.25',vel:'$1.00',hosts:['api.exa.ai','api.helius.dev']},scraper:{cap:50,ptx:'$0.10',vel:'$5.00',hosts:['api.browserbase.com']},blank:{cap:5,ptx:'$0.05',vel:'$0.50',hosts:[]}};
+function pickTmpl(btn,k){document.querySelectorAll('.tmpl button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+const t=tmplData[k];$('ob-cap').value=t.cap;$('ob-ptx').value=t.ptx;$('ob-vel').value=t.vel;
+const c=$('ob-chips');c.querySelectorAll('.chip-t').forEach(x=>x.remove());
+t.hosts.forEach(h=>addChip(c,h));capCalc()}
+function addChip(box,host){const s=document.createElement('span');s.className='chip-t';s.innerHTML=host+' <b onclick="this.parentNode.remove()">×</b>';box.insertBefore(s,box.querySelector('input'))}
+function chipKey(e,inp){if(e.key==='Enter'&&inp.value.trim()){e.preventDefault();const h=inp.value.trim();addChip(inp.parentNode,h);inp.value='';if(h==='*')toast('Wildcard added — this agent will carry an "all endpoints allowed" warning.')}}
+function setCap(v,el){$('ob-cap').value=v;document.querySelectorAll('#ob-2 .preset').forEach(p=>p.classList.remove('on'));el.classList.add('on');capCalc()}
+function capCalc(){const v=parseFloat($('ob-cap').value||0);$('cap-est').textContent='≈ '+Math.floor(v/0.012).toLocaleString()+' Exa searches at $0.012 each'}
+function obGo(n){[1,2,3,4,5].forEach(k=>{const el=$('ob-'+k);if(el)el.style.display=k===n?'':'none';$('st'+k).classList.toggle('done',k<=n)});
+if(n===3){$('rv-name').textContent=$('ob-name').value||'research-bot-01';$('rv-cap').textContent='$'+parseFloat($('ob-cap').value||10).toFixed(2)+' USDC';
+$('ob-signrow').style.display='';$('ob-pending').style.display='none';$('ob-err').style.display='none';$('ob-done3').style.display='none'}}
+let signTries=0;
+function obSign(){$('ob-signrow').style.display='none';$('ob-err').style.display='none';$('ob-pending').style.display='';signTries++;
+setTimeout(()=>{$('ob-pending').style.display='none';
+if(signTries===1&&window._demoReject){$('ob-err').style.display='';return}
+$('ob-done3').style.display=''},2200)}
+function runHandshake(){const log=$('hslog');log.innerHTML='';const lines=[
+['mut','$ agent requests https://api.sandbox.leash.dev/demo/search'],
+['amb','← 402 Payment Required · exact · $0.010 USDC · payTo Ex4…j8Wq'],
+['mut','→ challenge forwarded to Leash signer'],
+['grn','✓ rules passed — allow-list, per-payment, velocity, budget, expiry, mint (6/6)'],
+['grn','✓ signed within allowance 3xk…9Qe · $0.010'],
+['mut','→ request replayed with X-PAYMENT'],
+['amb','… broadcast by endpoint — waiting for on-chain read-back'],
+['grn','✓ confirmed · slot 356 442 231 · sig 8Wq…k2N'],
+['grn','← 200 OK · receipt attached']];
+lines.forEach((l,i)=>setTimeout(()=>{const d=document.createElement('div');d.className='ln';
+d.style.color=l[0]==='grn'?'var(--grn)':l[0]==='amb'?'var(--amb)':'var(--mut)';d.textContent=l[1];log.appendChild(d);
+if(i===lines.length-1)$('ob-final').style.display=''},600+i*650))}
+function snip(btn,id){document.querySelectorAll('.codetabs button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+['sn-mcp','sn-cli','sn-node'].forEach(s=>$(s).style.display=s===id?'':'none')}
+function enterApp(){$('v-onboard').classList.remove('on');$('shell').classList.add('on');nav('dash')}
+function startOnboard(){$('shell').classList.remove('on');$('v-onboard').classList.add('on');obGo(1);$('hslog').innerHTML='<span class="mut">waiting for the first request…</span>';$('ob-final').style.display='none';scrollTo(0,0)}
+function signOut(){$('shell').classList.remove('on');$('v-auth').classList.add('on')}
+/* env */
+let sandbox=true;
+function toggleEnv(){sandbox=!sandbox;const c=$('envchip');c.textContent=sandbox?'Sandbox':'Mainnet';c.classList.toggle('sandbox',sandbox);
+$('sandbanner').style.display=sandbox?'flex':'none';$('set-net').textContent=sandbox?'Sandbox (Surfnet)':'Solana mainnet';
+toast(sandbox?'Switched to sandbox — play-money USDC.':'Mainnet. Delegations here move real USDC — caps still protect you.')}
+/* nav */
+const views={dash:'Agents',pay:'Payments',alerts:'Alerts',audit:'Audit',billing:'Plan',settings:'Settings'};
+function nav(v){document.querySelectorAll('.content > .view').forEach(s=>s.classList.remove('on'));$('v-'+v).classList.add('on');
+document.querySelectorAll('#rail a').forEach(a=>a.classList.toggle('on',a.dataset.nav===v));$('crumb').textContent=views[v]||v;closeDrawer()}
+document.querySelectorAll('#rail a').forEach(a=>a.onclick=e=>{e.preventDefault();nav(a.dataset.nav)})
+function openAgent(){document.querySelectorAll('.content > .view').forEach(s=>s.classList.remove('on'));$('v-agent').classList.add('on');$('crumb').textContent='Agents / research-bot-01'}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.tabv').forEach(t=>t.style.display='none');$(b.dataset.tab).style.display=''})
+/* drawer with handshake timeline variants */
+const dw={
+ok:`<div class="kv" style="margin-top:14px"><span class="k">Agent</span><span>research-bot-01</span><span class="k">Endpoint</span><span class="mono" style="font-size:12px">api.exa.ai/search</span><span class="k">Amount</span><span class="money">$0.012 USDC</span><span class="k">Pay to</span><span class="mono" style="font-size:12px">Ex4…j8Wq</span><span class="k">Signature</span><span class="mono" style="font-size:12px">5Kd…w2P <a href="#" onclick="return false">receipt</a></span></div>
+<h3 style="margin-top:18px">402 handshake</h3><div class="tl">
+<div class="tl-r"><span class="dot2 ok2">1</span><div><div class="tl-h">Challenge received</div><div class="tl-d">402 · exact · $0.012 · 14:02:09.114</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">2</span><div><div class="tl-h">Rules passed — 6 of 6 checks</div><div class="tl-d">allow-list · per-payment · velocity · budget · expiry · mint</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">3</span><div><div class="tl-h">Signed within allowance</div><div class="tl-d">3xk…9Qe · 41 ms in signer</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">4</span><div><div class="tl-h">Replayed with X-PAYMENT</div><div class="tl-d">by agent · 14:02:09.201</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">5</span><div><div class="tl-h">Broadcast by endpoint</div><div class="tl-d">facilitator submit · 14:02:10</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">6</span><div><div class="tl-h">Confirmed on Solana — read back</div><div class="tl-d">slot 356 441 977 · budget $7.42 remaining</div></div></div></div>`,
+blocked:`<div class="kv" style="margin-top:14px"><span class="k">Agent</span><span>research-bot-01</span><span class="k">Endpoint</span><span class="mono" style="font-size:12px">api.unknown.xyz/v1</span><span class="k">Amount</span><span class="money">$0.310 USDC</span><span class="k">Result</span><span style="color:var(--red)">blocked — nothing was signed, nothing moved</span></div>
+<h3 style="margin-top:18px">402 handshake</h3><div class="tl">
+<div class="tl-r"><span class="dot2 ok2">1</span><div><div class="tl-h">Challenge received</div><div class="tl-d">402 · exact · $0.310 · 14:01:40.512</div></div></div>
+<div class="tl-r"><span class="dot2 bad2">2</span><div><div class="tl-h">Blocked by rule: endpoint not allowed</div><div class="tl-d">api.unknown.xyz is not on this agent's allow list · 5 other checks not reached</div></div></div></div>
+<div class="note">If this endpoint is legitimate, allow it and the agent's next attempt will go through.</div>
+<button class="pri" onclick="toast('api.unknown.xyz added to research-bot-01\\'s allow list. In effect from the next payment.');closeDrawer()">Add api.unknown.xyz to allow list</button>
+<button class="ghost" onclick="toast('Marked as expected block. We won\\'t alert on this endpoint again.');closeDrawer()">This block is correct</button>`,
+unknown:`<div class="kv" style="margin-top:14px"><span class="k">Agent</span><span>research-bot-01</span><span class="k">Endpoint</span><span class="mono" style="font-size:12px">api.exa.ai/contents</span><span class="k">Amount</span><span class="money">$0.008 USDC</span><span class="k">Signature</span><span class="mono" style="font-size:12px">9mT…c4R</span></div>
+<h3 style="margin-top:18px">402 handshake</h3><div class="tl">
+<div class="tl-r"><span class="dot2 ok2">1</span><div><div class="tl-h">Challenge received</div><div class="tl-d">402 · exact · $0.008 · 13:58:47</div></div></div>
+<div class="tl-r"><span class="dot2 ok2">2</span><div><div class="tl-h">Rules passed — signed</div><div class="tl-d">6 of 6 checks · 38 ms</div></div></div>
+<div class="tl-r"><span class="dot2 wait2"><span class="spin" style="width:9px;height:9px"></span></span><div><div class="tl-h">Outcome unknown — re-checking Solana</div><div class="tl-d">endpoint went silent after signing · next read-back in 4 min</div></div></div></div>
+<div class="note">This payment timed out before we saw a result. It is neither failed nor confirmed. Leash keeps checking the chain by signature — and will never sign this challenge a second time, so a double charge is impossible.</div>`};
+function openDrawer(kind){event&&event.stopPropagation&&event.stopPropagation();$('dw-body').innerHTML=dw[kind]||dw.ok;$('drawer').classList.add('on');$('ovl').classList.add('on')}
+function closeDrawer(){$('drawer').classList.remove('on');$('ovl').classList.remove('on')}
+/* kill + topup + export */
+function killAgent(){closeModals();const s=$('ag-state');s.className='pill wait';s.innerHTML='<span class="spin"></span> revoking…';$('killbtn').disabled=true;$('killbtn').textContent='Revoke pending';toast('Signer is refusing new payments. Waiting for the on-chain revoke to confirm…');
+setTimeout(()=>{s.className='pill bad';s.textContent='revoked';$('killbtn').textContent='Revoked';toast('Allowance revoked on-chain. This agent can no longer spend.')},3800)}
+function topup(){closeModals();toast('Waiting for your wallet…');setTimeout(()=>{$('alw-num').innerHTML='$7.42 <span class="mut" style="font-size:13px">of $20.00</span>';$('alw-bar').style.width='37%';toast('Cap raised to $20.00 — confirmed on-chain.')},2600)}
+function queueExport(){const tb=$('jobs');const r=tb.insertRow(1);r.innerHTML='<td class="mono" style="font-size:12px">Aug 1 – Sep 4</td><td class="mono" style="font-size:12px">just now</td><td><span class="pill wait"><span class="spin"></span> preparing</span></td><td class="mut">—</td>';toast('Export queued. It appears below when ready — nothing to wait on.');
+setTimeout(()=>{r.cells[2].innerHTML='<span class="pill ok">ready</span>';r.cells[3].innerHTML='<a href="#" onclick="return false">Download CSV</a>'},4500)}
+/* chips in onboarding */
+document.addEventListener('keydown',e=>{if(e.target&&e.target.id==='chip-in')chipKey(e,e.target)})
+/* ambient feed */
+const feedRows=[['ops-batch','api.helius.dev','$0.004','ok','confirmed','ok'],['research-bot-01','api.exa.ai','$0.012','ok','confirmed','ok'],['scraper-eu','api.browserbase.com','$0.050','wait','submitted','unknown']];
+let fi=0;setInterval(()=>{const f=$('feed');if(!f||!$('shell').classList.contains('on'))return;const r=feedRows[fi++%feedRows.length];
+const d=document.createElement('div');d.className='f-row';const t=new Date().toTimeString().slice(0,8);
+d.innerHTML='<span class="f-t">'+t+'</span><span class="rowlink" onclick="openDrawer(\''+r[5]+'\')"><b>'+r[0]+'</b> → '+r[1]+' <span class="money">'+r[2]+'</span> <span class="pill '+r[3]+'">'+r[4]+'</span></span>';
+f.prepend(d);while(f.children.length>12)f.lastChild.remove()},6000);
+</script>
+</body></html>

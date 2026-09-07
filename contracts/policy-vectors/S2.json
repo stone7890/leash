@@ -1,0 +1,36 @@
+{
+  "rule": "S2", "code": "ENDPOINT_NOT_ALLOWED",
+  "$comment": "The one-tap recovery button adds the EXACT host from the challenge. Matching loosely here would quietly widen every allow-list that button has ever touched, which is the trap the specification names for flow P3.",
+  "cases": [
+    { "name": "pass · an exact host match",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a host that is not on the list",
+      "request": { "host": "api.unknown.xyz" },
+      "expect": { "verdict": "blocked", "failed_rule": "S2", "code": "ENDPOINT_NOT_ALLOWED", "tier": "signer" } },
+
+    { "name": "boundary · a SUBDOMAIN of an allowed host is not allowed",
+      "$why": "api.exa.ai being allowed must not admit evil.api.exa.ai. Suffix matching is how an allow-list stops being one.",
+      "request": { "host": "evil.api.exa.ai" },
+      "expect": { "verdict": "blocked", "failed_rule": "S2", "code": "ENDPOINT_NOT_ALLOWED" } },
+
+    { "name": "boundary · the parent domain of an allowed host is not allowed",
+      "request": { "host": "exa.ai" },
+      "expect": { "verdict": "blocked", "failed_rule": "S2", "code": "ENDPOINT_NOT_ALLOWED" } },
+
+    { "name": "pass · a host match is case-insensitive, as hostnames are",
+      "request": { "host": "API.Exa.AI" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "pass · a wildcard admits any host, and flags the agent",
+      "snapshot": { "policy": { "allow_all": true, "allow_hosts": [] } },
+      "request": { "host": "api.anything.example" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · the host is allowed but the RECIPIENT is not",
+      "$why": "Checking only the host is wrong. An allowed endpoint that starts asking for payment to a different address is exactly what a host-only check waves through.",
+      "snapshot": { "policy": { "allow_pay_to": ["Ex4Yb8mQjWnGqLpTdRsVzKcHaFuNxPjW9mQ2kTdRsVzK"] } },
+      "request": { "pay_to": "BadAddr8mQjWnGqLpTdRsVzKcHaFuNxPjW9mQ2kTdRsV" },
+      "expect": { "verdict": "blocked", "failed_rule": "S2", "code": "ENDPOINT_NOT_ALLOWED" } }
+  ]
+}

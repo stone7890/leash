@@ -1,0 +1,31 @@
+{
+  "rule": "S5", "code": "BUDGET_EXHAUSTED",
+  "$comment": "remaining = cap − drawn − reserved. `reserved` is the money committed by payments we have signed but not yet seen resolve, and it INCLUDES payments in the `unknown` state — assuming those failed and freeing their budget is how one challenge gets paid twice (I4). S5 cannot be disabled, and the loser of the FIFO race receives this code.",
+  "cases": [
+    { "name": "pass · comfortably inside the remaining budget",
+      "snapshot": { "allowance": { "cap": "10.000000", "drawn": "2.000000", "reserved": "0.500000" } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · EXACTLY the remaining budget is allowed",
+      "snapshot": { "allowance": { "cap": "10.000000", "drawn": "9.500000", "reserved": "0.400000" } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "boundary · one micro-USDC over the remaining budget is refused",
+      "snapshot": { "allowance": { "cap": "10.000000", "drawn": "9.500000", "reserved": "0.400001" } },
+      "request": { "amount": "0.100000" },
+      "expect": { "verdict": "blocked", "failed_rule": "S5", "code": "BUDGET_EXHAUSTED", "tier": "onchain" } },
+
+    { "name": "fail · in-flight payments hold their budget",
+      "$why": "The cap has plenty drawn against it, but signed-and-unresolved payments have reserved the rest. This is the case a naive `cap − drawn` would get wrong.",
+      "snapshot": { "allowance": { "cap": "10.000000", "drawn": "0.000000", "reserved": "10.000000" } },
+      "request": { "amount": "0.010000" },
+      "expect": { "verdict": "blocked", "failed_rule": "S5", "code": "BUDGET_EXHAUSTED" } },
+
+    { "name": "fail · a fully drawn allowance",
+      "snapshot": { "allowance": { "cap": "10.000000", "drawn": "10.000000", "reserved": "0.000000" } },
+      "request": { "amount": "0.000001" },
+      "expect": { "verdict": "blocked", "failed_rule": "S5", "code": "BUDGET_EXHAUSTED" } }
+  ]
+}

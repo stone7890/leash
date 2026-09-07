@@ -1,0 +1,48 @@
+{
+  "$comment": "Where every endpoint lives, and what it answers. CI fails if an endpoint here is not routed by the runtime that claims it, or a routed endpoint is missing here. See docs/05-api-contract.md.",
+  "version": 1,
+  "runtimes": {
+    "web":     "frontend/web — Next.js route handlers, owner session",
+    "signer":  "cmd/leash-signer — Go, agent API key",
+    "indexer": "cmd/leash-indexer — Go, owner session, proxied through web"
+  },
+  "endpoints": [
+    { "method": "POST",  "path": "/v1/auth/siws/nonce",                 "runtime": "web",     "auth": "none",   "status": [200] },
+    { "method": "POST",  "path": "/v1/auth/siws/verify",                "runtime": "web",     "auth": "none",   "status": [200, 401] },
+
+    { "method": "GET",   "path": "/v1/templates",                       "runtime": "web",     "auth": "owner",  "status": [200] },
+
+    { "method": "POST",  "path": "/v1/agents",                          "runtime": "web",     "auth": "owner",  "status": [201, 409], "idempotent": true },
+    { "method": "GET",   "path": "/v1/agents",                          "runtime": "web",     "auth": "owner",  "status": [200] },
+    { "method": "GET",   "path": "/v1/agents/{id}",                     "runtime": "web",     "auth": "owner",  "status": [200, 404] },
+
+    { "method": "POST",  "path": "/v1/agents/{id}/delegation-intents",  "runtime": "web",     "auth": "owner",  "status": [202, 409], "idempotent": true, "chain": true },
+    { "method": "POST",  "path": "/v1/agents/{id}/modify-intents",      "runtime": "web",     "auth": "owner",  "status": [202, 409], "idempotent": true, "chain": true },
+    { "method": "POST",  "path": "/v1/agents/{id}/revoke-intents",      "runtime": "web",     "auth": "owner",  "status": [202, 409], "idempotent": true, "chain": true },
+
+    { "method": "PATCH", "path": "/v1/agents/{id}/policy",              "runtime": "web",     "auth": "owner",  "status": [200, 422] },
+    { "method": "PATCH", "path": "/v1/agents/{id}/policy/allow-hosts",  "runtime": "web",     "auth": "owner",  "status": [200, 422] },
+
+    { "method": "POST",  "path": "/v1/agents/{id}/keys/rotate",         "runtime": "web",     "auth": "owner",  "status": [200], "idempotent": true },
+
+    { "method": "POST",  "path": "/v1/sign",                            "runtime": "signer",  "auth": "agent",  "status": [200, 403, 409] },
+
+    { "method": "GET",   "path": "/v1/agents/{id}/payments",            "runtime": "web",     "auth": "owner",  "status": [200], "paginated": true },
+    { "method": "GET",   "path": "/v1/payments",                        "runtime": "web",     "auth": "owner",  "status": [200], "paginated": true },
+    { "method": "GET",   "path": "/v1/payments/{id}/timeline",          "runtime": "web",     "auth": "owner",  "status": [200, 404] },
+
+    { "method": "POST",  "path": "/v1/test-payments",                   "runtime": "web",     "auth": "owner",  "status": [202], "idempotent": true },
+    { "method": "GET",   "path": "/v1/test-payments/{id}/stream",       "runtime": "indexer", "auth": "owner",  "status": [200], "sse": true },
+
+    { "method": "POST",  "path": "/v1/sandbox/faucet",                  "runtime": "web",     "auth": "owner",  "status": [202, 422, 429], "idempotent": true },
+
+    { "method": "POST",  "path": "/v1/audit/exports",                   "runtime": "web",     "auth": "owner",  "status": [202], "idempotent": true },
+    { "method": "GET",   "path": "/v1/jobs/{id}",                       "runtime": "web",     "auth": "owner",  "status": [200, 404] },
+
+    { "method": "GET",   "path": "/v1/alerts",                          "runtime": "web",     "auth": "owner",  "status": [200], "paginated": true },
+    { "method": "GET",   "path": "/v1/alert-settings",                  "runtime": "web",     "auth": "owner",  "status": [200] },
+    { "method": "PATCH", "path": "/v1/alert-settings",                  "runtime": "web",     "auth": "owner",  "status": [200] },
+    { "method": "POST",  "path": "/v1/alert-settings/test-webhook",     "runtime": "web",     "auth": "owner",  "status": [202] },
+    { "method": "POST",  "path": "/v1/agents/{id}/suppressions",        "runtime": "web",     "auth": "owner",  "status": [201] }
+  ]
+}

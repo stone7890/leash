@@ -1,0 +1,25 @@
+{
+  "rule": "S6", "code": "UNSUPPORTED_TERMS",
+  "$comment": "S6 cannot be disabled. It is the rule that refuses to pay in the wrong token, under a scheme we do not implement, or to a recipient that cannot receive. Under the x402 `exact` scheme, creating the recipient's token account is the ENDPOINT's responsibility — saying so in the message is what makes it actionable by whoever can fix it.",
+  "cases": [
+    { "name": "pass · the network's USDC, the exact scheme, a recipient that can receive",
+      "expect": { "verdict": "allowed" } },
+
+    { "name": "fail · a scheme we do not implement",
+      "request": { "scheme": "upto" },
+      "expect": { "verdict": "blocked", "failed_rule": "S6", "code": "UNSUPPORTED_TERMS", "tier": "signer" } },
+
+    { "name": "boundary · the right network, but the OTHER network's USDC mint",
+      "$why": "The key, the agent and the challenge all say sandbox, so S0 passes — and the mint is still wrong. This is why the mint is checked as well as the network.",
+      "request": { "mint": "MainnetUSDCMint1111111111111111111111111111" },
+      "expect": { "verdict": "blocked", "failed_rule": "S6", "code": "UNSUPPORTED_TERMS" } },
+
+    { "name": "fail · the recipient has no token account for this mint",
+      "request": { "recipient_account_exists": false },
+      "expect": { "verdict": "blocked", "failed_rule": "S6", "code": "UNSUPPORTED_TERMS" } },
+
+    { "name": "fail · a challenge asking for an unrelated token",
+      "request": { "mint": "So11111111111111111111111111111111111111112" },
+      "expect": { "verdict": "blocked", "failed_rule": "S6", "code": "UNSUPPORTED_TERMS" } }
+  ]
+}
