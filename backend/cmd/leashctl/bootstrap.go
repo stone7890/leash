@@ -126,11 +126,17 @@ func cmdBootstrap(ctx context.Context, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if err := fundSandbox(c, client, authority, []funding{
+	// The PARENT context, not the five-minute working one. On a public cluster this step can sit
+	// waiting for a human to send SOL, and a wait measured in minutes must not be paid for out of
+	// the budget the mint work needs — so `c` is renewed on the other side of it.
+	if err := fundSandbox(ctx, client, authority, []funding{
 		{"sample endpoint's facilitator", facilitator.PublicKey(), want},
 	}, want); err != nil {
 		return err
 	}
+	cancel()
+	c, cancel = withTimeout(ctx, 5*time.Minute)
+	defer cancel()
 
 	fmt.Println("creating the sandbox USDC mint")
 	mint := solana.NewWallet()
@@ -283,12 +289,21 @@ type funding struct {
 // operator should be reading about faucets at all.
 func fundSandbox(ctx context.Context, c *solrpc.Client, treasury *solana.Wallet,
 	dependants []funding, want uint64) error {
+	wait, err := fundingWait()
+	if err != nil {
+		return err
+	}
+	// ctx is the parent, so that a wait for a hand deposit is not charged to the RPC work. Each
+	// phase gets its own budget, and the one after the wait is created after it.
+	work, cancel := withTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
 	// What the treasury must hold: its own working balance, plus whatever the dependants are
 	// short. Asking for exactly this and no more keeps the airdrop within what devnet grants.
 	need := want
 	var short []funding
 	for _, d := range dependants {
-		have := balanceOf(ctx, c, d.key)
+		have := balanceOf(work, c, d.key)
 		if have >= d.want {
 			fmt.Printf("  %s already funded (%.3f SOL)\n", d.who,
 				float64(have)/float64(solana.LAMPORTS_PER_SOL))
@@ -299,44 +314,169 @@ func fundSandbox(ctx context.Context, c *solrpc.Client, treasury *solana.Wallet,
 		need += d.want
 	}
 
-	airdropErr := fundOne(ctx, c, funding{"mint authority", treasury.PublicKey(), need})
-	if have := balanceOf(ctx, c, treasury.PublicKey()); have < need {
-		var b strings.Builder
-		fmt.Fprintf(&b, "this network will not fund the sandbox, and its treasury holds %.4f "+
-			"SOL.\n\n", float64(have)/float64(solana.LAMPORTS_PER_SOL))
-		fmt.Fprintf(&b, "    send at least %.2f SOL to  %s\n",
-			float64(need-have)/float64(solana.LAMPORTS_PER_SOL), treasury.PublicKey())
-		fmt.Fprintf(&b, "\n  ONE address. The mint authority is the sandbox's treasury: bootstrap "+
-			"pays the other keys from it, so this is the only transfer anybody has to make.\n\n")
-		// Where the SOL can come from differs by cluster, and the wrong answer wastes an
-		// afternoon: faucet.solana.com serves devnet and not testnet. Asking the chain which one
-		// it is beats printing advice that cannot work — the same helper `leashctl keys` uses, so
-		// the two cannot give contradictory instructions.
-		for _, line := range strings.Split(fundingAdvice(ctx, c), "\n") {
-			fmt.Fprintf(&b, "  %s\n", line)
+	airdropErr := fundOne(work, c, funding{"mint authority", treasury.PublicKey(), need})
+	if have := balanceOf(work, c, treasury.PublicKey()); have < need {
+		// Waiting only makes sense where the money comes from a person. A local validator hands
+		// out airdrops on demand, so a refusal THERE is a fault — sitting on it for half an hour
+		// would hide the fault behind a wait nobody can satisfy.
+		waiting := wait > 0 && clusterOf(work, c) != ""
+		text := fundingShortfall(work, c, treasury.PublicKey(), need, have, airdropErr, waiting, wait)
+		if !waiting {
+			return errors.New(text)
 		}
-		fmt.Fprintf(&b, "\n  The key is already written to the state directory, so fund that "+
-			"address once and run this again; bootstrap is idempotent and will carry on from "+
-			"here. Do NOT `make clean` in between — that destroys the state volume, and the next "+
-			"run generates a different address.\n")
-		// A rate limit is the expected answer from a public faucet, not a fault, so it gets one
-		// line rather than a dump. Anything else might be a real problem and is shown in full.
-		if rateLimited(airdropErr) {
-			fmt.Fprintf(&b, "\n  (the cluster's own faucet is rate limited, as expected)")
-		} else {
-			fmt.Fprintf(&b, "\n  (last RPC error: %s)", rpcMessage(airdropErr))
+		fmt.Println(text)
+		if err := awaitDeposit(ctx, c, treasury.PublicKey(), need, have, wait); err != nil {
+			return err
 		}
-		return errors.New(b.String())
+		// The wait may have outlived the first budget, and everything below signs transactions.
+		cancel()
+		work, cancel = withTimeout(ctx, 5*time.Minute)
+		defer cancel()
 	}
 
 	for _, d := range short {
 		fmt.Printf("  paying %s %.3f SOL from the treasury\n", d.who,
 			float64(d.want)/float64(solana.LAMPORTS_PER_SOL))
-		if err := transferSOL(ctx, c, treasury, d.key, d.want); err != nil {
+		if err := transferSOL(work, c, treasury, d.key, d.want); err != nil {
 			return fmt.Errorf("paying the %s from the treasury: %w", d.who, err)
 		}
 	}
 	return nil
+}
+
+// fundingShortfall is what an operator reads when the cluster will not pay: the address, the
+// amount, where the SOL can come from, and what happens next.
+//
+// It is one function and not two because the first four lines are the same whether bootstrap is
+// about to wait or about to exit, and two copies of an address-and-amount message is how the two
+// drift apart. Only the closing paragraph differs, and it is the paragraph that says what the
+// operator has to do — the difference between "run this again" and "nothing, this is watching".
+func fundingShortfall(ctx context.Context, c *solrpc.Client, treasury solana.PublicKey,
+	need, have uint64, airdropErr error, waiting bool, wait time.Duration) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "this network will not fund the sandbox, and its treasury holds %.4f "+
+		"SOL.\n\n", float64(have)/float64(solana.LAMPORTS_PER_SOL))
+	fmt.Fprintf(&b, "    send at least %.2f SOL to  %s\n",
+		float64(need-have)/float64(solana.LAMPORTS_PER_SOL), treasury)
+	fmt.Fprintf(&b, "\n  ONE address. The mint authority is the sandbox's treasury: bootstrap "+
+		"pays the other keys from it, so this is the only transfer anybody has to make.\n\n")
+	// Where the SOL can come from differs by cluster, and the wrong answer wastes an afternoon:
+	// faucet.solana.com serves devnet and not testnet. Asking the chain which one it is beats
+	// printing advice that cannot work — the same helper `leashctl keys` uses, so the two cannot
+	// give contradictory instructions.
+	for _, line := range strings.Split(fundingAdvice(ctx, c), "\n") {
+		fmt.Fprintf(&b, "  %s\n", line)
+	}
+	if waiting {
+		fmt.Fprintf(&b, "\n  WAITING for it — up to %s, checking every %s. Send the SOL and "+
+			"bootstrap carries on by itself; there is nothing to re-run and nothing to restart. "+
+			"Do NOT `make clean` in the meantime — that destroys the state volume, and the next "+
+			"run generates a different address.\n", wait, depositPoll)
+		fmt.Fprintf(&b, "  (BOOTSTRAP_FUND_WAIT sets how long; 0 goes back to exiting straight "+
+			"away.)\n")
+	} else {
+		fmt.Fprintf(&b, "\n  The key is already written to the state directory, so fund that "+
+			"address once and run this again; bootstrap is idempotent and will carry on from "+
+			"here. Do NOT `make clean` in between — that destroys the state volume, and the next "+
+			"run generates a different address.\n")
+	}
+	// A rate limit is the expected answer from a public faucet, not a fault, so it gets one line
+	// rather than a dump. Anything else might be a real problem and is shown in full.
+	if rateLimited(airdropErr) {
+		fmt.Fprintf(&b, "\n  (the cluster's own faucet is rate limited, as expected)")
+	} else {
+		fmt.Fprintf(&b, "\n  (last RPC error: %s)", rpcMessage(airdropErr))
+	}
+	return b.String()
+}
+
+// depositPoll is how often the treasury is re-read while waiting for a hand deposit. A transfer
+// confirms in about a second, so this is what decides how long somebody watches a log after they
+// have already sent the money.
+const depositPoll = 5 * time.Second
+
+// awaitDeposit blocks until the treasury holds what bootstrap needs, or the wait runs out.
+//
+// The alternative is what this did before: exit, and make somebody run the whole thing again once
+// the transfer has landed. Bootstrap is the service every other one waits on, so exiting stops the
+// stack — and the operator, who is right there reading the log that told them the address, has to
+// come back and restart it for a reason the machine could see for itself. The deposit IS the
+// signal. Nothing else needs to happen.
+//
+// It reports what actually arrives rather than only the end state, because a faucet that grants
+// less than the target is the common way this goes wrong, and "0.2 received, 0.2 still short" is
+// the difference between sending the rest and watching a wait that will never end.
+func awaitDeposit(ctx context.Context, c *solrpc.Client, key solana.PublicKey,
+	need, have uint64, wait time.Duration) error {
+	// A little past the wait, so the deadline that stops this is the one below — which can say
+	// what was and was not received — rather than a context expiring mid-read.
+	ctx, cancel := withTimeout(ctx, wait+depositPoll)
+	defer cancel()
+
+	giveUp := time.Now().Add(wait)
+	heartbeat := time.Now().Add(time.Minute)
+	tick := time.NewTicker(depositPoll)
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for the deposit: %w", ctx.Err())
+		case <-tick.C:
+		}
+
+		// GetBalance directly, not balanceOf: that one reports an unreadable balance as zero,
+		// which is the right answer for "should I top this up" and the wrong one here — a
+		// momentary RPC failure would read as the money going away again.
+		bal, err := c.GetBalance(ctx, key, solrpc.CommitmentConfirmed)
+		if err == nil && bal != nil && bal.Value != have {
+			have = bal.Value
+			if have >= need {
+				fmt.Printf("  received it — the treasury holds %.4f SOL. Carrying on.\n",
+					float64(have)/float64(solana.LAMPORTS_PER_SOL))
+				return nil
+			}
+			fmt.Printf("  received %.4f SOL — still %.4f short of %.4f\n",
+				float64(have)/float64(solana.LAMPORTS_PER_SOL),
+				float64(need-have)/float64(solana.LAMPORTS_PER_SOL),
+				float64(need)/float64(solana.LAMPORTS_PER_SOL))
+		}
+
+		if now := time.Now(); now.After(giveUp) {
+			return fmt.Errorf("nothing sufficient arrived within %s — the treasury holds %.4f "+
+				"SOL and needs %.4f. The address above is still the one to fund, and bootstrap "+
+				"is idempotent: send the SOL and run it again", wait,
+				float64(have)/float64(solana.LAMPORTS_PER_SOL),
+				float64(need)/float64(solana.LAMPORTS_PER_SOL))
+		} else if now.After(heartbeat) {
+			fmt.Printf("  still waiting for %.4f SOL — %s left\n",
+				float64(need-have)/float64(solana.LAMPORTS_PER_SOL),
+				giveUp.Sub(now).Round(time.Second))
+			heartbeat = now.Add(time.Minute)
+		}
+	}
+}
+
+// fundingWait is how long bootstrap will sit waiting for somebody to fund the treasury by hand.
+//
+// Thirty minutes by default, and only on a public cluster: that is long enough to go and find a
+// faucet, and short enough that a container left running against a chain nobody is watching does
+// eventually stop. Zero restores the old behaviour of exiting immediately, which is what an
+// unattended build wants — nothing is going to send SOL to a CI runner's log.
+//
+//	BOOTSTRAP_FUND_WAIT=0    leashctl bootstrap
+//	BOOTSTRAP_FUND_WAIT=2h   leashctl bootstrap
+func fundingWait() (time.Duration, error) {
+	raw := env("BOOTSTRAP_FUND_WAIT", "30m")
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("BOOTSTRAP_FUND_WAIT: %q is not a duration — try 30m, 2h, or 0 to "+
+			"exit instead of waiting", raw)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("BOOTSTRAP_FUND_WAIT: %s is negative", raw)
+	}
+	return d, nil
 }
 
 // balanceOf reads a balance and treats an unreadable one as zero, because every caller here is

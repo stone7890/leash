@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"encoding/json"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	ata "github.com/gagliardetto/solana-go/programs/associated-token-account"
 	"github.com/gagliardetto/solana-go/programs/token"
@@ -86,6 +88,107 @@ func (ix *Indexer) faucet(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{
 		"sol":  fmt.Sprintf("%.4f", float64(faucetSOL)/float64(solana.LAMPORTS_PER_SOL)),
 		"usdc": faucetUSDC.String(),
+	})
+}
+
+// walletBalance says what a wallet actually holds: its sandbox USDC and its SOL.
+//
+// The wizard needs this before it opens a wallet, and it is a different question from "has the
+// faucet been used". It used to ask the second one — the Sign button was enabled by a successful
+// faucet call in that browser session — and the two questions have the same answer only for the
+// first agent of the hour, on a page that has not been reloaded. Every other time (a second agent,
+// a refresh, a wallet funded yesterday) the faucet refuses a wallet that is already funded, and
+// the owner is locked out of a delegation their wallet can perfectly well afford.
+//
+// So the chain is asked. An absent token account is zero rather than an error, because a wallet
+// that has never held sandbox USDC has no account and that is the same fact; a chain that cannot
+// be reached is an error rather than zero, because "we could not look" must not read as "you have
+// nothing" — that is the lockout again, wearing a different hat.
+func (ix *Indexer) walletBalance(c *gin.Context) {
+	if !ix.internalOK(c) {
+		c.JSON(http.StatusUnauthorized, fault.Envelope{Error: fault.Body{
+			Code: "UNAUTHENTICATED", Message: "internal token required", Retriable: false}})
+		return
+	}
+	owner, err := solana.PublicKeyFromBase58(c.Query("wallet"))
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, fault.Envelope{Error: fault.Body{
+			Code: "INVALID_WALLET", Message: "not a Solana address", Field: "wallet",
+			Retriable: false}})
+		return
+	}
+	n := network.Network(c.DefaultQuery("network", string(network.Sandbox)))
+	mintAddr, _ := ix.mintFor(n)
+	if mintAddr == "" {
+		c.JSON(http.StatusUnprocessableEntity, fault.Envelope{Error: fault.Body{
+			Code: "UNSUPPORTED_NETWORK", Message: "no mint is configured for " + string(n),
+			Field: "network", Retriable: false}})
+		return
+	}
+	mint, err := solana.PublicKeyFromBase58(mintAddr)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, fault.Envelope{Error: fault.Body{
+			Code: "CHAIN_UNREACHABLE", Message: "the mint is not configured: " + err.Error(),
+			Retriable: true}})
+		return
+	}
+
+	ctx := c.Request.Context()
+	usdc, err := ix.usdcBalance(ctx, n, owner, mint)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, fault.Envelope{Error: fault.Body{
+			Code: "CHAIN_UNREACHABLE", Message: err.Error(), Retriable: true}})
+		return
+	}
+	sol, err := rpc.Do(ctx, ix.pool, n, func(cl *solrpc.Client) (uint64, error) {
+		out, err := cl.GetBalance(ctx, owner, solrpc.CommitmentConfirmed)
+		if err != nil {
+			return 0, err
+		}
+		return out.Value, nil
+	})
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, fault.Envelope{Error: fault.Body{
+			Code: "CHAIN_UNREACHABLE", Message: err.Error(), Retriable: true}})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"wallet":  owner.String(),
+		"network": string(n),
+		"usdc":    usdc.String(),
+		"sol":     fmt.Sprintf("%.4f", float64(sol)/float64(solana.LAMPORTS_PER_SOL)),
+	})
+}
+
+// usdcBalance reads the owner's associated token account, the one the delegation spends from.
+//
+// The same decode `spl.ReadAllowance` does, and the same treatment of a missing account: not
+// found is zero, not a failure.
+func (ix *Indexer) usdcBalance(ctx context.Context, n network.Network, owner,
+	mint solana.PublicKey) (money.Base, error) {
+	ataAddr, _, err := solana.FindAssociatedTokenAddress(owner, mint)
+	if err != nil {
+		return 0, err
+	}
+	return rpc.Do(ctx, ix.pool, n, func(cl *solrpc.Client) (money.Base, error) {
+		res, err := cl.GetAccountInfoWithOpts(ctx, ataAddr, &solrpc.GetAccountInfoOpts{
+			Commitment: solrpc.CommitmentConfirmed,
+		})
+		if errors.Is(err, solrpc.ErrNotFound) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if res == nil || res.Value == nil {
+			return 0, nil
+		}
+		var acc token.Account
+		if err := bin.NewBinDecoder(res.Value.Data.GetBinary()).Decode(&acc); err != nil {
+			return 0, fmt.Errorf("decoding the token account: %w", err)
+		}
+		return money.Base(acc.Amount), nil
 	})
 }
 

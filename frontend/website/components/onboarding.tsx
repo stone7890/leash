@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { base64ToBytes, bytesToBase64 } from "@/lib/domain/base64";
 import { COPY } from "@/lib/domain/fault";
 import { TierBadge } from "@/components/pills";
@@ -33,14 +33,24 @@ type SolanaProvider = {
   signAndSendTransaction?: (tx: unknown) => Promise<{ signature: string }>;
 };
 
-export function Onboarding({ templates }: { templates: Template[] }) {
+export function Onboarding({ templates, demoHost }:
+  { templates: Template[]; demoHost: string }) {
+  // The sample endpoint step 5 pays. It goes on every new sandbox agent's allow list, visibly, as
+  // a chip the owner can remove — because S2 checks the host of the test payment against that list,
+  // and a wizard whose own last step is refused by the policy its second step wrote is a wizard
+  // that cannot be completed. Adding it silently at payment time would be worse: the policy shown
+  // would not be the policy stored.
+  const withDemo = useCallback((list: string[]) =>
+    list.includes(demoHost) ? list : [...list, demoHost], [demoHost]);
+
   const [step, setStep] = useState(1);
   const [template, setTemplate] = useState(templates[0]?.id ?? "blank");
   const [name, setName] = useState("research-bot-01");
   const [runsAs, setRunsAs] = useState("cli");
   const [cap, setCap] = useState(templates[0]?.cap ?? "10.000000");
   const [expiryDays, setExpiryDays] = useState(7);
-  const [hosts, setHosts] = useState<string[]>(templates[0]?.allowHosts ?? []);
+  const [hosts, setHosts] = useState<string[]>(
+    templates[0]?.allowHosts ? [...templates[0].allowHosts, demoHost] : [demoHost]);
   const [hostDraft, setHostDraft] = useState("");
   const [allowAll, setAllowAll] = useState(false);
 
@@ -50,7 +60,12 @@ export function Onboarding({ templates }: { templates: Template[] }) {
   const [error, setError] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [funded, setFunded] = useState(false);
+  // What the wallet HOLDS, read from the chain — not whether the faucet was clicked. `null` means
+  // "not read", which includes a read that failed, and null does not block the button: being
+  // unable to look is not evidence that the wallet is empty, and treating it as such is how this
+  // screen used to lock people out.
+  const [balance, setBalance] = useState<{ usdc: string; sol: string } | null>(null);
+  const [reading, setReading] = useState(false);
 
   // Generated when the form OPENS, not when the button is clicked, so two clicks create one agent.
   const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
@@ -70,18 +85,71 @@ export function Onboarding({ templates }: { templates: Template[] }) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error?.message ?? "the faucet could not fund this wallet");
-      setFunded(true);
+      // The faucet waits for its own transfer to confirm before answering, so the chain already
+      // agrees. Read it back rather than assuming what it now says.
+      await readBalance();
     } catch (e) {
       setError(e instanceof Error ? e.message : "the faucet could not fund this wallet");
     } finally { setBusy(false); }
   }
 
+  const readBalance = useCallback(async () => {
+    setReading(true);
+    try {
+      const res = await fetch("/v1/sandbox/wallet", { cache: "no-store" });
+      setBalance(res.ok ? await res.json() : null);
+    } catch {
+      setBalance(null);
+    } finally { setReading(false); }
+  }, []);
+
+  // Read on arrival at the delegation step, because that is the step whose transaction spends it.
+  useEffect(() => {
+    if (step === 3) void readBalance();
+  }, [step, readBalance]);
+
+  // Step 4 says it is waiting for on-chain confirmation, so it has to actually wait for it. The
+  // allowance is pending until the indexer reads it back (I4), and a test payment started inside
+  // that window is refused by S1 — the signer being right, and the screen being wrong. Polling the
+  // agent is what makes the sentence above the button true.
+  const [allowanceState, setAllowanceState] = useState<string | null>(null);
+  const [waitedOut, setWaitedOut] = useState(false);
+
+  useEffect(() => {
+    if (step !== 4 || !agent) return;
+    let stopped = false;
+    const read = async () => {
+      try {
+        const res = await fetch(`/v1/agents/${agent.id}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!stopped) setAllowanceState(body?.allowance?.state ?? null);
+      } catch {
+        // Late, not wrong. The next tick asks again.
+      }
+    };
+    void read();
+    const poll = setInterval(read, 3000);
+    // An escape hatch, because a screen that can only ever unlock itself is the failure this
+    // wizard has already met once: if the read keeps failing, hand the decision to the signer,
+    // which is the authority anyway and refuses with a message naming the rule.
+    const escape = setTimeout(() => !stopped && setWaitedOut(true), 90_000);
+    return () => { stopped = true; clearInterval(poll); clearTimeout(escape); };
+  }, [step, agent]);
+
+  const confirmed = allowanceState === "active";
+
+  // Short means the chain SAYS it is short. An unread balance is not short: the button stays
+  // available, and a wallet that really cannot afford the delegation learns it from the chain
+  // rather than from a screen that guessed.
+  const short = balance !== null && Number(balance.usdc) < Number(cap);
+
   const pickTemplate = useCallback((t: Template) => {
     setTemplate(t.id);
     setCap(t.cap);
-    setHosts(t.allowHosts);
+    setHosts(withDemo(t.allowHosts));
     setExpiryDays(t.expiryDays);
-  }, []);
+  }, [withDemo]);
 
   async function createAgent() {
     setBusy(true); setError(null);
@@ -252,6 +320,7 @@ export function Onboarding({ templates }: { templates: Template[] }) {
               {hosts.map((h) => (
                 <span key={h} className="mono rounded-full border border-line bg-panel2 px-2 py-0.5 text-xs">
                   {h}
+                  {h === demoHost && <span className="ml-1 text-mut">· sample endpoint</span>}
                   <button onClick={() => setHosts(hosts.filter((x) => x !== h))}
                           className="ml-1.5 text-mut hover:text-red">×</button>
                 </span>
@@ -276,7 +345,9 @@ export function Onboarding({ templates }: { templates: Template[] }) {
               className={inputCls} />
             <p className="mt-1 text-xs text-mut">
               Type <span className="mono">*</span> to allow every endpoint — we&apos;ll flag the
-              agent with a warning if you do.
+              agent with a warning if you do. <span className="mono">{demoHost}</span> is the
+              sandbox&apos;s sample endpoint, which step 5 pays for real; remove it and the test
+              payment will be refused by rule S2, which is the rule working.
             </p>
           </Field>
 
@@ -314,11 +385,12 @@ export function Onboarding({ templates }: { templates: Template[] }) {
             without Leash running.
           </p>
 
-          {!funded && (
+          {short && (
             <div className="rounded-[10px] border border-line bg-panel2 p-3">
               <p className="text-xs text-mut">
-                This wallet needs sandbox USDC before it can delegate any. It is play money on a
-                test network and has no value.
+                {Number(balance?.usdc ?? 0) === 0
+                  ? "This wallet needs sandbox USDC before it can delegate any. It is play money on a test network and has no value."
+                  : `This wallet holds $${balance?.usdc} sandbox USDC, and the delegation moves $${cap} into the agent's account.`}
               </p>
               <button onClick={fund} disabled={busy}
                       className="mt-2 rounded-[10px] border border-line px-3 py-1.5 text-xs
@@ -327,8 +399,10 @@ export function Onboarding({ templates }: { templates: Template[] }) {
               </button>
             </div>
           )}
-          {funded && (
-            <p className="text-xs text-grn">100 test USDC sent to your wallet.</p>
+          {balance && !short && (
+            <p className="mono text-xs text-grn">
+              Wallet holds ${balance.usdc} test USDC · {balance.sol} SOL
+            </p>
           )}
 
           {signState === "waiting" && (
@@ -339,8 +413,11 @@ export function Onboarding({ templates }: { templates: Template[] }) {
           )}
 
           <div className="flex gap-2">
-            <button onClick={buildAndSign} disabled={busy || !funded} className={primaryCls}>
-              {signState === "rejected" ? "Try again" : busy ? "Building…" : "Sign in wallet"}
+            <button onClick={buildAndSign} disabled={busy || reading || short} className={primaryCls}>
+              {signState === "rejected" ? "Try again"
+                : busy ? "Building…"
+                : reading ? "Checking your wallet…"
+                : "Sign in wallet"}
             </button>
           </div>
         </section>
@@ -352,10 +429,16 @@ export function Onboarding({ templates }: { templates: Template[] }) {
 
           {/* Submitted is not confirmed. The allowance is pending until the indexer reads it
               back, and saying otherwise would be reporting success early (I4). */}
-          <p className="rounded-[10px] border border-amb/30 bg-panel2 p-3 text-xs text-mut">
-            Waiting for on-chain confirmation. Submitted is not confirmed — this flips the moment
-            the allowance is readable on Solana.
-          </p>
+          {confirmed ? (
+            <p className="rounded-[10px] border border-grn/30 bg-panel2 p-3 text-xs text-grn">
+              Confirmed on Solana. The allowance is active and this agent can spend from it.
+            </p>
+          ) : (
+            <p className="rounded-[10px] border border-amb/30 bg-panel2 p-3 text-xs text-mut">
+              Waiting for on-chain confirmation. Submitted is not confirmed — this flips the moment
+              the allowance is readable on Solana.
+            </p>
+          )}
 
           <Field label="Agent API key">
             <div className="mono break-all rounded-[10px] border border-line bg-panel2 p-3 text-xs">
@@ -375,8 +458,11 @@ pay curl -i https://api.exa.ai/search?q=solana   # 402 → sign → 200`}
           </Field>
 
           <div className="flex gap-2">
-            <button onClick={runTestPayment} disabled={busy} className={primaryCls}>
-              {busy ? "Starting…" : "Run a test payment"}
+            <button onClick={runTestPayment} disabled={busy || !(confirmed || waitedOut)}
+                    className={primaryCls}>
+              {busy ? "Starting…"
+                : confirmed || waitedOut ? "Run a test payment"
+                : "Waiting for confirmation…"}
             </button>
             <a href="/agents" className={secondaryCls}>Skip — open dashboard</a>
           </div>

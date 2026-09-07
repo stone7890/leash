@@ -102,6 +102,16 @@ services:
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
       RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
+      # Named here, and not left to env_file, so it can be set for ONE run:
+      # `BOOTSTRAP_FUND_SOL=0.2 make devnet` is what the deployment doc tells an operator to do
+      # when a public faucet is refusing, and a value that only ever comes from .env would make
+      # that line do nothing at all. env_file remains the default; this overrides it.
+      BOOTSTRAP_FUND_SOL: "${BOOTSTRAP_FUND_SOL:-2}"
+      # How long bootstrap waits to be funded by hand before giving up. It only ever waits on a
+      # public cluster, and while it waits this container stays up and everything else stays
+      # queued behind it — which is the point: fund the address it printed and the stack finishes
+      # starting on its own.
+      BOOTSTRAP_FUND_WAIT: "${BOOTSTRAP_FUND_WAIT:-30m}"
       LEASH_STATE_DIR: /state
     volumes:
       - leashstate:/state
@@ -167,6 +177,11 @@ services:
       RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       SIGNER_BASE_URL: "http://signer:4100"
       INDEXER_BASE_URL: "http://indexer:4300"
+      # Step 5 pays the sample endpoint for real, and S2 checks its host against the agent's allow
+      # list — so the wizard has to know that host in order to put it there, visibly, at step 2.
+      # It is deployment-specific, which is why it is configuration and not a constant in the
+      # template seeds.
+      DEMO_ENDPOINT_URL: "http://demo402:4200"
       LEASH_STATE_DIR: /state
     volumes:
       - leashstate:/state:ro

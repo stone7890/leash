@@ -15,8 +15,10 @@
 #
 #   - Airdrops are rate limited, and on testnet the RPC faucet is simply broken (it answers
 #     "Internal error"). `leashctl bootstrap` handles this: it asks, and if refused it prints ONE
-#     address to fund and exits, then carries on from there when run again. `make testnet-keys`
-#     prints the same thing at any time.
+#     address to fund and then WAITS for the money, carrying on the moment it lands — this
+#     container stays up and everything else stays queued behind it, which is the whole reason
+#     waiting beats exiting. BOOTSTRAP_FUND_WAIT bounds it (0 goes back to exiting). Running it
+#     again after funding works just as well. `make testnet-keys` prints the address at any time.
 #   - The sandbox USDC mint is created by bootstrap here too. It is OUR mint — bootstrap holds the
 #     mint authority, which is what lets the in-app faucet mint. That is why the sandbox works on
 #     testnet at all, where no published test USDC exists.

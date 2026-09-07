@@ -191,9 +191,27 @@ answer. Before, the treasury needs its target plus whatever the facilitator is s
 needs only fee money — a prepared sandbox sits below its funding target, because it has just paid
 rent on a mint, and reporting that as broken would be worse than not reporting at all.
 
-The keys are written to the state directory before bootstrap stops, so fund the address from
-<https://faucet.solana.com> or any funded wallet and run it again: it is idempotent, sees the
-balance, pays the facilitator, and carries on to the mint.
+On a public cluster bootstrap does not stop there — it **waits**. It prints the address, then
+re-reads the balance every five seconds for `BOOTSTRAP_FUND_WAIT` (default 30m), reporting anything
+partial that arrives:
+
+```
+  received 0.2000 SOL — still 0.2000 short of 0.4000
+  still waiting for 0.2000 SOL — 28m30s left
+```
+
+Send the SOL and it carries on by itself: pays the facilitator, creates the mint, and the services
+queued behind it start. Nothing has to be re-run, because bootstrap is the one service everything
+else waits on — exiting would stop the stack over a step the machine can simply watch for.
+
+It waits only where the money comes from a person. A local validator airdrops on demand, so a
+refusal there is a fault and fails at once rather than hiding behind a wait nobody can satisfy.
+`BOOTSTRAP_FUND_WAIT=0` restores the immediate exit, which is what an unattended build wants —
+nothing is going to send SOL to a CI runner's log.
+
+Either way the keys are written to the state directory before bootstrap stops, so funding the
+address from <https://faucet.solana.com> or any funded wallet and running it again works too: it is
+idempotent, sees the balance, pays the facilitator, and carries on to the mint.
 
 Once funded, everything else is unchanged — the CAIP-2 identifier for the sandbox is devnet's, so
 the x402 wire format is already correct.
@@ -247,6 +265,7 @@ from failing fast.
 | `TELEGRAM_BOT_TOKEN` | indexer | Required **only if** `ALERTS_ENABLED` |
 | `ALLOWED_ORIGINS` | web | |
 | `BOOTSTRAP_FUND_SOL` | leashctl | Default 2. SOL wanted in each sandbox key |
+| `BOOTSTRAP_FUND_WAIT` | leashctl | Default 30m. How long bootstrap waits to be funded by hand on a public cluster; 0 exits instead |
 | `FAUCET_PER_WALLET_PER_HOUR` | web, indexer | Default 1. The 429 on the sandbox faucet |
 | `LOG_LEVEL` | all | Default `info` |
 

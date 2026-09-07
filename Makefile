@@ -98,7 +98,18 @@ endif
 			echo "  make stop     stop it"; \
 			exit 0; fi; \
 		printf "."; sleep 2; done; \
-		echo ""; echo "the front door did not answer. Try: make logs"; exit 1
+		echo ""; \
+		if $(COMPOSE) ps --status running --services 2>/dev/null | grep -qx bootstrap; then \
+			echo ""; \
+			echo "  bootstrap is still running, which on a public cluster means it is WAITING to"; \
+			echo "  be funded. It printed one address to send SOL to:"; \
+			echo ""; \
+			echo "      $(COMPOSE) logs bootstrap"; \
+			echo ""; \
+			echo "  Send it, and the rest of the stack starts by itself — nothing to re-run."; \
+		else \
+			echo "the front door did not answer. Try: make logs"; \
+		fi; exit 1
 
 ## The infrastructure in Docker, everything we wrote on the host — so a rebuild is seconds and a
 ## debugger can reach it. MongoDB and the validator are identical either way, and are not worth

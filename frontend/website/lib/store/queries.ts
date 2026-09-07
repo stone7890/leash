@@ -286,21 +286,31 @@ export async function listActivity(
   return out.slice(0, limit);
 }
 
-/** The canonical form is stored verbatim, so the amount and host are recoverable from it. */
+/**
+ * The amount, from the canonical form that is stored verbatim.
+ *
+ * The canonical form carries BASE UNITS — `amount=10000` is one cent, "exactly as the protocol
+ * carries them" — so it is read as an integer, not parsed as a decimal. Parsing it as a decimal is
+ * what made every blocked row in the activity table read $10000.00 for a one-cent refusal: a
+ * million times over, on the screen whose whole job is to tell an owner how much was at stake.
+ */
 function parseAmount(canonical: string | undefined): bigint {
-  const m = canonical ? /^amount=(.+)$/m.exec(canonical) : null;
+  const m = canonical ? /^amount=(-?\d+)$/m.exec(canonical) : null;
   if (!m?.[1]) return 0n;
-  try { return parseMoneyLocal(m[1]); } catch { return 0n; }
+  try { return BigInt(m[1]); } catch { return 0n; }
 }
 
-function parseHost(canonical: string | undefined): string | null {
-  const m = canonical ? /^pay_to=(.+)$/m.exec(canonical) : null;
-  return m?.[1] ?? null;
-}
-
-function parseMoneyLocal(s: string): bigint {
-  const [whole, frac = ""] = s.trim().split(".");
-  return BigInt(whole ?? "0") * 1_000_000n + BigInt((frac + "000000").slice(0, 6) || "0");
+/**
+ * The host cannot be recovered from the canonical form, and this says so.
+ *
+ * The canonical form EXCLUDES the host deliberately — the same challenge is the same payment
+ * whichever name resolved to the server — which is exactly why the signer stores the host beside
+ * it, in `requirements.host`. The fallback used to return the `pay_to=` line, so a sign request
+ * written before that field existed would show a wallet address in the Endpoint column and offer
+ * to add it to the allow list. Null renders as "unknown", which is the truth.
+ */
+function parseHost(_canonical: string | undefined): string | null {
+  return null;
 }
 
 function ruleCode(checks: Check[], failed: string | undefined): string {

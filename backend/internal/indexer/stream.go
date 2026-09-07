@@ -31,6 +31,7 @@ func (ix *Indexer) Router(health func() map[string]any) *gin.Engine {
 	r.POST("/internal/submit", ix.submitSigned)
 	r.POST("/internal/test-payments", ix.runTestPayment)
 	r.POST("/internal/faucet", ix.faucet)
+	r.GET("/internal/wallet", ix.walletBalance)
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, health()) })
 	return r
 }

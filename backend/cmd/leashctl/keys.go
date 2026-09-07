@@ -146,14 +146,16 @@ func cmdKeys(ctx context.Context, _ []string) error {
 	}
 
 	if haveTreasury >= need {
-		fmt.Printf("\nthe treasury is funded. `make testnet` will carry on from here.\n")
+		fmt.Printf("\nthe treasury is funded. `%s` will carry on from here.\n",
+			resumeCommand(c, client))
 		return nil
 	}
 	fmt.Printf("\nONE address to fund — bootstrap pays the others from it:\n\n")
 	fmt.Printf("    send %.4f SOL to  %s\n\n",
 		float64(need-haveTreasury)/float64(solana.LAMPORTS_PER_SOL), treasury)
 	fmt.Println(fundingAdvice(c, client))
-	fmt.Printf("Then run `make testnet` again — bootstrap is idempotent and carries on from here.\n")
+	fmt.Printf("Then run `%s` again — bootstrap is idempotent and carries on from here.\n",
+		resumeCommand(c, client))
 	return nil
 }
 
@@ -166,13 +168,7 @@ func cmdKeys(ctx context.Context, _ []string) error {
 // The cluster is read from the chain's genesis hash, not from configuration — same as the way the
 // sample endpoint decides what to announce, and for the same reason.
 func fundingAdvice(ctx context.Context, client *solrpc.Client) string {
-	cluster := challenge.Cluster("")
-	if h, err := client.GetGenesisHash(ctx); err == nil {
-		if got, ok := challenge.ClusterFromGenesis(h.String()); ok {
-			cluster = got
-		}
-	}
-	switch cluster {
+	switch clusterOf(ctx, client) {
 	case challenge.ClusterDevnet:
 		return "From https://faucet.solana.com (set it to Devnet), or any wallet holding devnet SOL."
 	case challenge.ClusterTestnet:
@@ -184,4 +180,35 @@ func fundingAdvice(ctx context.Context, client *solrpc.Client) string {
 	}
 	return "This ledger is not a public cluster, so it should be airdropping freely.\n" +
 		"An unfunded key here usually means the validator is not the one bootstrap talked to."
+}
+
+// resumeCommand names the make target that carries on from here, for the cluster this really is.
+//
+// The target IS the ledger — `make devnet` sets the endpoint itself and cannot quietly run against
+// testnet — so telling somebody on devnet to run `make testnet` sends them to another chain, with
+// another state volume, another set of keys, and the treasury they just funded left behind on the
+// ledger they were told to leave. The same reason fundingAdvice asks the chain rather than trusting
+// configuration, and the same answer it asks for.
+func resumeCommand(ctx context.Context, client *solrpc.Client) string {
+	switch clusterOf(ctx, client) {
+	case challenge.ClusterDevnet:
+		return "make devnet"
+	case challenge.ClusterTestnet:
+		return "make testnet"
+	}
+	// A local validator is `make start`, and mainnet falls in with it because mainnet has no target
+	// of its own and should not — fundingAdvice has already said so, loudly, one line above.
+	return "make start"
+}
+
+// clusterOf asks the chain which cluster it is, from its genesis hash rather than from
+// configuration — the same read the sample endpoint makes to decide what to announce. An empty
+// cluster means "not a public one", which for this binary means the local validator.
+func clusterOf(ctx context.Context, client *solrpc.Client) challenge.Cluster {
+	if h, err := client.GetGenesisHash(ctx); err == nil {
+		if got, ok := challenge.ClusterFromGenesis(h.String()); ok {
+			return got
+		}
+	}
+	return challenge.Cluster("")
 }

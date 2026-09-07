@@ -5,6 +5,7 @@ import { formatShort } from "@/lib/domain/money";
 import { PaymentPill, Pill } from "@/components/pills";
 import { Timeline } from "@/components/timeline";
 import { Recovery } from "@/components/recovery";
+import { ActivityRow } from "@/components/activity-row";
 import { RULE_COPY, COPY } from "@/lib/domain/fault";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export default async function PaymentsPage({
                 const id = idOf(a);
                 const isBlock = a.kind === "block";
                 return (
-                  <tr key={id} className={`border-t border-line ${id === open ? "bg-panel2" : ""}`}>
+                  <ActivityRow key={id} href={`/payments?open=${id}`} selected={id === open}>
                     <td className="mono px-4 py-2 text-xs text-mut">{a.at.slice(11, 19)}</td>
                     <td className="px-4 py-2 text-xs">
                       {isBlock ? a.agentName : a.payment.agentName}
@@ -67,7 +68,7 @@ export default async function PaymentsPage({
                         ? <Pill tone="bad">blocked · {RULE_COPY[a.code]?.name ?? a.failedRule}</Pill>
                         : <PaymentPill state={a.payment.state} />}
                     </td>
-                  </tr>
+                  </ActivityRow>
                 );
               })}
             </tbody>
