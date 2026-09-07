@@ -19,10 +19,12 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	solrpc "github.com/gagliardetto/solana-go/rpc"
 
 	"github.com/stone7890/leash/internal/chain/rpc"
 	"github.com/stone7890/leash/internal/config"
 	"github.com/stone7890/leash/internal/demo402"
+	"github.com/stone7890/leash/internal/domain/challenge"
 	"github.com/stone7890/leash/internal/domain/money"
 	"github.com/stone7890/leash/internal/domain/network"
 	"github.com/stone7890/leash/internal/obs"
@@ -88,6 +90,29 @@ func run(ctx context.Context) error {
 	}
 	slog.Info("acting as the facilitator", "fee_payer", facilitator.PublicKey())
 
+	// Which cluster the sandbox ledger really is, asked of the ledger itself.
+	//
+	// Every offer this endpoint publishes names a network, and a client builds its transaction for
+	// whatever it is told. Getting that from configuration would mean a variable somebody can set
+	// wrongly; getting it from the genesis hash means the answer cannot disagree with the chain we
+	// are about to settle on. A local validator matches nothing, and is announced as devnet —
+	// there is no identifier for a private ledger that any client could act on.
+	cluster := challenge.ClusterDevnet
+	if genesis, err := rpc.Do(ctx, pool, network.Sandbox,
+		func(cl *solrpc.Client) (string, error) {
+			h, err := cl.GetGenesisHash(ctx)
+			return h.String(), err
+		}); err != nil {
+		slog.Warn("could not read the chain's genesis hash; announcing offers as devnet",
+			"error", err)
+	} else if c, ok := challenge.ClusterFromGenesis(genesis); ok {
+		cluster = c
+		slog.Info("the sandbox ledger identified itself", "cluster", cluster, "genesis", genesis)
+	} else {
+		slog.Info("the sandbox ledger is not a public cluster; announcing offers as devnet",
+			"genesis", genesis)
+	}
+
 	srv := &http.Server{
 		Handler: demo402.New(pool, demo402.Options{
 			Mint:         cfg.Mints[network.Sandbox].Address,
@@ -95,6 +120,7 @@ func run(ctx context.Context) error {
 			Price:        money.Base(cfg.PriceBase),
 			FeePayer:     facilitator.PublicKey().String(),
 			TokenProgram: cfg.Mints[network.Sandbox].ProgramID,
+			Cluster:      cluster,
 			Sign: func(message []byte) ([]byte, error) {
 				sig, err := facilitator.PrivateKey.Sign(message)
 				if err != nil {

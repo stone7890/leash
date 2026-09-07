@@ -1,0 +1,32 @@
+# The sandbox on a PUBLIC Solana cluster, instead of the local validator.
+#
+#   make testnet         start the stack against whatever RPC_SANDBOX_URL names
+#   make testnet-keys    the one address to fund, and what it holds
+#   make testnet-demo    run the end-to-end demo against it
+#
+# Which cluster is decided entirely by RPC_SANDBOX_URL in .env — this file names none, because it
+# has nothing cluster-specific in it. Testnet, devnet or a hosted provider are the same change.
+#
+# Overlay only. It changes WHERE the sandbox ledger is, and nothing else. Invariant I8 is
+# untouched: `sandbox` remains a network in its own right, its records still carry the test_
+# prefix, and mainnet still has no endpoint here.
+#
+# Two things differ from the local validator, and both are the public network's doing:
+#
+#   - Airdrops are rate limited, and on testnet the RPC faucet is simply broken (it answers
+#     "Internal error"). `leashctl bootstrap` handles this: it asks, and if refused it prints ONE
+#     address to fund and exits, then carries on from there when run again. `make testnet-keys`
+#     prints the same thing at any time.
+#   - The sandbox USDC mint is created by bootstrap here too. It is OUR mint — bootstrap holds the
+#     mint authority, which is what lets the in-app faucet mint. That is why the sandbox works on
+#     testnet at all, where no published test USDC exists.
+services:
+  # Not started. The ledger is the public cluster's.
+  validator:
+    profiles: ["local-validator"]
+
+  # bootstrap is the only service that waits on the validator, so it is the only one that has to
+  # stop waiting. Everything else waits on bootstrap, which is still correct.
+  bootstrap:
+    depends_on: !override
+      mongo: { condition: service_healthy }

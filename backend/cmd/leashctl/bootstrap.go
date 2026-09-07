@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 	solrpc "github.com/gagliardetto/solana-go/rpc"
+	"github.com/gagliardetto/solana-go/rpc/jsonrpc"
 	"github.com/stone7890/leash/internal/kms"
 	"github.com/stone7890/leash/internal/migrate"
 	"github.com/stone7890/leash/internal/store"
@@ -116,15 +118,17 @@ func cmdBootstrap(ctx context.Context, _ []string) error {
 	// Modest amounts: a local validator would grant any of these, and a public faucet caps at
 	// around two SOL. Each covers rent and fees for what that key actually does, and nothing more.
 	//
-	// All three are attempted before any of them reports, so an operator on a public cluster gets
-	// one list of addresses to fund rather than discovering the next one on the next run. Same
-	// principle as the configuration loader naming every missing variable at once: fixing one item
-	// per restart is a bad afternoon, and here each restart also costs a rate-limited faucet.
-	if err := fundAll(c, client, []funding{
-		{"mint authority", authority.PublicKey(), 2 * solana.LAMPORTS_PER_SOL},
-		{"faucet", faucet.PublicKey(), 2 * solana.LAMPORTS_PER_SOL},
-		{"sample endpoint's facilitator", facilitator.PublicKey(), 2 * solana.LAMPORTS_PER_SOL},
-	}); err != nil {
+	// The faucet key is NOT here. It is created and recorded, because sandbox.json publishes it,
+	// but nothing ever signs with it — the in-app faucet mints with the mint authority. Funding it
+	// would spend a third of a rate-limited devnet allowance on an address that never pays for
+	// anything.
+	want, err := fundingTarget()
+	if err != nil {
+		return err
+	}
+	if err := fundSandbox(c, client, authority, []funding{
+		{"sample endpoint's facilitator", facilitator.PublicKey(), want},
+	}, want); err != nil {
 		return err
 	}
 
@@ -170,13 +174,74 @@ func cmdBootstrap(ctx context.Context, _ []string) error {
 	return nil
 }
 
+// rpcMessage renders a Solana RPC failure as a sentence.
+//
+// solana-go's RPCError.Error() returns a spew dump of the struct — a dozen lines of Go syntax with
+// a pointer address in them — so a one-line "you have hit the faucet limit" arrives looking like a
+// panic. The information anybody needs is the code and the message.
+func rpcMessage(err error) string {
+	var rpcErr *jsonrpc.RPCError
+	if errors.As(err, &rpcErr) {
+		return fmt.Sprintf("%s (code %d)", strings.TrimSpace(rpcErr.Message), rpcErr.Code)
+	}
+	if err == nil {
+		return "none"
+	}
+	return err.Error()
+}
+
+// rateLimited reports whether a failure is the faucet saying "not today".
+//
+// It is worth distinguishing because it is not a defect and not a misconfiguration: it is the
+// expected answer from a public cluster, and reporting it with the same weight as a real RPC
+// failure trains people to ignore both.
+func rateLimited(err error) bool {
+	var rpcErr *jsonrpc.RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == 429
+}
+
+// fundingTarget is how much SOL each of the three keys should hold.
+//
+// Two SOL by default, which is what a local validator grants without complaint and roughly what a
+// public airdrop caps at. It is settable because on devnet the operator is spending a real, rate
+// limited allowance: six SOL across three keys is a day's worth from https://faucet.solana.com,
+// and a demo that only ever creates a mint, one token account and a few transfers does not need
+// anything close to it. Lowering it is the operator's call, so it is a variable rather than a
+// number somebody has to patch.
+//
+//	BOOTSTRAP_FUND_SOL=0.2 leashctl bootstrap
+//
+// The floor is what the chain itself demands: below rent exemption for a mint account, funding
+// "succeeds" and the very next instruction fails for a reason that does not name this.
+func fundingTarget() (uint64, error) {
+	raw := env("BOOTSTRAP_FUND_SOL", "2")
+	sol, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("BOOTSTRAP_FUND_SOL: %q is not a number of SOL", raw)
+	}
+	lamports := uint64(sol * float64(solana.LAMPORTS_PER_SOL))
+	const floor = uint64(solana.LAMPORTS_PER_SOL / 100) // 0.01 SOL
+	if lamports < floor {
+		return 0, fmt.Errorf("BOOTSTRAP_FUND_SOL: %s SOL is not enough to create a mint and pay "+
+			"its fees. The minimum is 0.01", raw)
+	}
+	return lamports, nil
+}
+
 // mintExists asks the chain whether an account is really there.
 func mintExists(ctx context.Context, c *solrpc.Client, addr string) (bool, error) {
 	key, err := solana.PublicKeyFromBase58(addr)
 	if err != nil {
 		return false, err
 	}
-	res, err := c.GetAccountInfo(ctx, key)
+	// Confirmed, like every other read here. GetAccountInfo defaults to FINALIZED, which lags by
+	// roughly a slot or two — long enough that a mint created moments ago reads as absent. For
+	// `keys` and `faucet` that means briefly reporting a working sandbox as unprepared; for
+	// bootstrap itself it would mean deciding the ledger had been reset and creating a SECOND
+	// mint while the first was still settling.
+	res, err := c.GetAccountInfoWithOpts(ctx, key, &solrpc.GetAccountInfoOpts{
+		Commitment: solrpc.CommitmentConfirmed,
+	})
 	if err != nil {
 		if errors.Is(err, solrpc.ErrNotFound) {
 			return false, nil
@@ -201,32 +266,96 @@ type funding struct {
 	want uint64
 }
 
-// fundAll attempts every key and reports all the ones it could not fund, together.
-func fundAll(ctx context.Context, c *solrpc.Client, needs []funding) error {
+// fundSandbox gets SOL to every key that spends it, through ONE address on a public network.
+//
+// The mint authority is the treasury. That is not an arbitrary choice: it is the key that must
+// hold SOL under every circumstance — it pays rent on the mint, rent on each token account, and
+// the fee on every faucet grant — so it is going to need funding whatever else happens. Making it
+// the single funded address means the others can be paid from it.
+//
+// Why this shape rather than one airdrop per key: on a local validator the difference is nothing,
+// both work. On a public cluster it is the whole experience. faucet.solana.com is rate limited per address
+// AND per IP, so asking an operator for three addresses is asking for three requests that are
+// individually likely to be refused, spread over a day, before anything works. One address is one
+// request, and bootstrap spreads it.
+//
+// It still tries the airdrop first, because on a local validator that succeeds instantly and no
+// operator should be reading about faucets at all.
+func fundSandbox(ctx context.Context, c *solrpc.Client, treasury *solana.Wallet,
+	dependants []funding, want uint64) error {
+	// What the treasury must hold: its own working balance, plus whatever the dependants are
+	// short. Asking for exactly this and no more keeps the airdrop within what devnet grants.
+	need := want
 	var short []funding
-	var last error
-	for _, n := range needs {
-		if err := fundOne(ctx, c, n); err != nil {
-			short = append(short, n)
-			last = err
+	for _, d := range dependants {
+		have := balanceOf(ctx, c, d.key)
+		if have >= d.want {
+			fmt.Printf("  %s already funded (%.3f SOL)\n", d.who,
+				float64(have)/float64(solana.LAMPORTS_PER_SOL))
+			continue
 		}
-	}
-	if len(short) == 0 {
-		return nil
+		d.want -= have
+		short = append(short, d)
+		need += d.want
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "this network will not fund %d of the keys this sandbox needs, and they hold "+
-		"nothing.\n\n", len(short))
-	for _, n := range short {
-		fmt.Fprintf(&b, "    send at least %.2f SOL to  %s   (%s)\n",
-			float64(n.want)/float64(solana.LAMPORTS_PER_SOL), n.key, n.who)
+	airdropErr := fundOne(ctx, c, funding{"mint authority", treasury.PublicKey(), need})
+	if have := balanceOf(ctx, c, treasury.PublicKey()); have < need {
+		var b strings.Builder
+		fmt.Fprintf(&b, "this network will not fund the sandbox, and its treasury holds %.4f "+
+			"SOL.\n\n", float64(have)/float64(solana.LAMPORTS_PER_SOL))
+		fmt.Fprintf(&b, "    send at least %.2f SOL to  %s\n",
+			float64(need-have)/float64(solana.LAMPORTS_PER_SOL), treasury.PublicKey())
+		fmt.Fprintf(&b, "\n  ONE address. The mint authority is the sandbox's treasury: bootstrap "+
+			"pays the other keys from it, so this is the only transfer anybody has to make.\n\n")
+		// Where the SOL can come from differs by cluster, and the wrong answer wastes an
+		// afternoon: faucet.solana.com serves devnet and not testnet. Asking the chain which one
+		// it is beats printing advice that cannot work — the same helper `leashctl keys` uses, so
+		// the two cannot give contradictory instructions.
+		for _, line := range strings.Split(fundingAdvice(ctx, c), "\n") {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+		fmt.Fprintf(&b, "\n  The key is already written to the state directory, so fund that "+
+			"address once and run this again; bootstrap is idempotent and will carry on from "+
+			"here. Do NOT `make clean` in between — that destroys the state volume, and the next "+
+			"run generates a different address.\n")
+		// A rate limit is the expected answer from a public faucet, not a fault, so it gets one
+		// line rather than a dump. Anything else might be a real problem and is shown in full.
+		if rateLimited(airdropErr) {
+			fmt.Fprintf(&b, "\n  (the cluster's own faucet is rate limited, as expected)")
+		} else {
+			fmt.Fprintf(&b, "\n  (last RPC error: %s)", rpcMessage(airdropErr))
+		}
+		return errors.New(b.String())
 	}
-	fmt.Fprintf(&b, "\n  A local validator airdrops freely; a public one does not — devnet's "+
-		"faucet is rate limited (https://faucet.solana.com) and mainnet has none. The keys are "+
-		"already written to the state directory, so fund these addresses once and run this again; "+
-		"bootstrap is idempotent and will carry on from here.\n  (last RPC error: %v)", last)
-	return errors.New(b.String())
+
+	for _, d := range short {
+		fmt.Printf("  paying %s %.3f SOL from the treasury\n", d.who,
+			float64(d.want)/float64(solana.LAMPORTS_PER_SOL))
+		if err := transferSOL(ctx, c, treasury, d.key, d.want); err != nil {
+			return fmt.Errorf("paying the %s from the treasury: %w", d.who, err)
+		}
+	}
+	return nil
+}
+
+// balanceOf reads a balance and treats an unreadable one as zero, because every caller here is
+// deciding whether to TOP UP — and topping up an account we could not read is harmless, while
+// skipping one we could not read is not.
+func balanceOf(ctx context.Context, c *solrpc.Client, key solana.PublicKey) uint64 {
+	bal, err := c.GetBalance(ctx, key, solrpc.CommitmentConfirmed)
+	if err != nil || bal == nil {
+		return 0
+	}
+	return bal.Value
+}
+
+// transferSOL moves lamports between two of the sandbox's own keys.
+func transferSOL(ctx context.Context, c *solrpc.Client, from *solana.Wallet,
+	to solana.PublicKey, lamports uint64) error {
+	return submit(ctx, c, []solana.Instruction{
+		system.NewTransferInstruction(lamports, from.PublicKey(), to).Build(),
+	}, from)
 }
 
 // fundOne tops a key up, and settles for what it already holds if the faucet refuses.

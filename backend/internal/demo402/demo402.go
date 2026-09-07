@@ -38,6 +38,11 @@ type Server struct {
 	feePayer     string
 	tokenProgram string
 	sign         func(message []byte) ([]byte, error)
+
+	// cluster is which public Solana cluster the sandbox's ledger actually is, read back from the
+	// chain at boot. Every offer this endpoint publishes names it, because a client cannot build a
+	// transaction for a cluster it was not told about.
+	cluster challenge.Cluster
 }
 
 type Options struct {
@@ -46,6 +51,10 @@ type Options struct {
 	Price        money.Base
 	FeePayer     string
 	TokenProgram string
+	// Cluster is the sandbox ledger's real cluster. Empty means devnet, which is what a local
+	// validator has to be called: its genesis matches no public cluster, and devnet is the one
+	// x402 implementations treat as "the test network".
+	Cluster challenge.Cluster
 	// Sign adds the facilitator's signature to the fee-payer slot the agent left empty.
 	Sign func(message []byte) ([]byte, error)
 }
@@ -55,9 +64,13 @@ func New(pool *rpc.Pool, o Options) *Server {
 	if tp == "" {
 		tp = solana.TokenProgramID.String()
 	}
+	cluster := o.Cluster
+	if cluster == "" {
+		cluster = challenge.ClusterDevnet
+	}
 	return &Server{
 		pool: pool, mint: o.Mint, payTo: o.PayTo, price: o.Price,
-		feePayer: o.FeePayer, tokenProgram: tp, sign: o.Sign,
+		feePayer: o.FeePayer, tokenProgram: tp, sign: o.Sign, cluster: cluster,
 	}
 }
 
@@ -111,7 +124,7 @@ func (s *Server) challenge(c *gin.Context) {
 	offer := gin.H{
 		"protocol": "x402",
 		"scheme":   challenge.SchemeExact,
-		"network":  challenge.WireNetwork(network.Sandbox, challenge.V2),
+		"network":  challenge.WireNetwork(network.Sandbox, challenge.V2, s.cluster),
 		// Base units, as a string. The protocol never carries a decimal here.
 		"amount":            s.price.BaseUnits(),
 		"maxAmountRequired": s.price.BaseUnits(),
@@ -232,10 +245,10 @@ func (s *Server) settle(c *gin.Context, header string, version challenge.Version
 	}
 
 	responseHeader := challenge.HeaderResponseV2
-	wireNet := challenge.WireNetwork(network.Sandbox, challenge.V2)
+	wireNet := challenge.WireNetwork(network.Sandbox, challenge.V2, s.cluster)
 	if version == challenge.V1 {
 		responseHeader = challenge.HeaderResponseV1
-		wireNet = challenge.WireNetwork(network.Sandbox, challenge.V1)
+		wireNet = challenge.WireNetwork(network.Sandbox, challenge.V1, s.cluster)
 	}
 	settlement, _ := json.Marshal(challenge.SettlementResponse{
 		Success: true, Transaction: sig.String(), Network: wireNet,

@@ -28,6 +28,8 @@ const usage = `leashctl — prove what the documentation claims
   verify-contracts        Go and the contracts/ files agree
   verify-architecture     the dependency and type boundaries   [--selftest]
   bootstrap               prepare a fresh sandbox: mint, faucet, recipient account
+  keys                    the sandbox's addresses, their balances, and what is short
+  faucet [address]        ask the chain for SOL; --sol N, --usdc N
   seed                    a demo organisation and agent, on the sandbox
 
 Environment:
@@ -63,6 +65,10 @@ func main() {
 		err = cmdVerifyArchitecture(ctx, args)
 	case "bootstrap":
 		err = cmdBootstrap(ctx, args)
+	case "keys":
+		err = cmdKeys(ctx, args)
+	case "faucet":
+		err = cmdFaucet(ctx, args)
 	case "demo":
 		err = cmdDemo(ctx, args)
 	case "seed":

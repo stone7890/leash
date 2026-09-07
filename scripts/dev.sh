@@ -48,7 +48,14 @@ VALIDATOR_PORT="${VALIDATOR_PORT:-8899}"
 # behaviour, arrived at confusingly. Separate databases, one ledger, no surprises.
 export MONGO_DB="${MONGO_DB:-leash}_dev"
 export MONGO_URI="mongodb://localhost:${MONGO_PORT}/${MONGO_DB}?replicaSet=rs0&directConnection=true"
-export RPC_SANDBOX_URL="http://localhost:${VALIDATOR_PORT}"
+# The ledger the sandbox lives on. .env wins if it names one — that is how `make dev` follows the
+# same RPC_SANDBOX_URL as the containerised stack, devnet included. The local validator is only the
+# default, and is started below only when it IS the default.
+export RPC_SANDBOX_URL="${RPC_SANDBOX_URL:-http://localhost:${VALIDATOR_PORT}}"
+case "$RPC_SANDBOX_URL" in
+http://localhost:* | http://127.0.0.1:* | http://validator:*) LOCAL_VALIDATOR=1 ;;
+*) LOCAL_VALIDATOR=0 ;;
+esac
 export LEASH_STATE_DIR="$STATE_DIR"
 export SIGNER_BASE_URL="http://localhost:4100"
 export INDEXER_BASE_URL="http://localhost:4300"
@@ -65,14 +72,19 @@ cleanup() {
 		[ -n "${pid:-}" ] && kill "$pid" 2>/dev/null || true
 	done
 	wait 2>/dev/null || true
-	echo "the database and the validator are still up — 'make stop' takes them down."
+	echo "the database is still up — 'make stop' takes it down."
 }
 trap cleanup EXIT INT TERM
 
 # ── infrastructure ───────────────────────────────────────────────────────────
 
-echo "starting MongoDB and the Solana validator"
-docker compose up -d mongo validator >/dev/null
+if [ "$LOCAL_VALIDATOR" = 1 ]; then
+	echo "starting MongoDB and the Solana validator"
+	docker compose up -d mongo validator >/dev/null
+else
+	echo "starting MongoDB — the sandbox ledger is $RPC_SANDBOX_URL, not a local validator"
+	docker compose up -d mongo >/dev/null
+fi
 
 printf "  waiting for a writable primary"
 for _ in $(seq 1 40); do
@@ -89,11 +101,11 @@ for _ in $(seq 1 40); do
 	sleep 2
 done
 
-printf "  waiting for the validator"
+printf "  waiting for the chain"
 for _ in $(seq 1 60); do
-	if curl -fsS -m 3 -X POST -H 'Content-Type: application/json' \
+	if curl -fsS -m 5 -X POST -H 'Content-Type: application/json' \
 		-d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-		"http://localhost:${VALIDATOR_PORT}" 2>/dev/null | grep -q ok; then
+		"$RPC_SANDBOX_URL" 2>/dev/null | grep -q ok; then
 		echo " — ready"
 		break
 	fi
@@ -148,7 +160,7 @@ echo ""
 echo "  Leash is running:  http://localhost:3000"
 echo ""
 echo "  signer   :4100     indexer :4300     demo-402 :4200"
-echo "  mongo    :$MONGO_PORT    validator :$VALIDATOR_PORT    database: $MONGO_DB"
+echo "  mongo    :$MONGO_PORT    chain: $RPC_SANDBOX_URL    database: $MONGO_DB"
 echo ""
 echo "  make demo-dev   run the whole loop against this"
 echo "  Ctrl-C          stop the services (the database keeps running)"

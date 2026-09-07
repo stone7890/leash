@@ -44,14 +44,15 @@ func load(t *testing.T, name string) []vector {
 // against another is the isolation failure invariant I8 exists to prevent, arriving from outside.
 func TestNetworkMappingMatchesPayKit(t *testing.T) {
 	for _, c := range []struct {
-		wire, cluster string
+		wire    string
+		cluster Cluster
 	}{
-		{"solana", "mainnet-beta"},
-		{"solana-devnet", "devnet"},
-		{"solana-testnet", "testnet"},
-		{CAIP2Mainnet, "mainnet-beta"},
-		{CAIP2Devnet, "devnet"},
-		{CAIP2Testnet, "testnet"},
+		{"solana", ClusterMainnet},
+		{"solana-devnet", ClusterDevnet},
+		{"solana-testnet", ClusterTestnet},
+		{CAIP2Mainnet, ClusterMainnet},
+		{CAIP2Devnet, ClusterDevnet},
+		{CAIP2Testnet, ClusterTestnet},
 	} {
 		got, ok := ClusterOf(c.wire)
 		if !ok || got != c.cluster {
@@ -71,18 +72,58 @@ func TestNetworkMappingMatchesPayKit(t *testing.T) {
 // the peer declared is how a payment is refused for a reason that looks like a signature problem.
 func TestWireNetworkMatchesTheVersion(t *testing.T) {
 	for _, c := range []struct {
-		v    Version
-		net  string
-		want string
+		v       Version
+		net     string
+		cluster Cluster
+		want    string
 	}{
-		{V1, "sandbox", SlugDevnet},
-		{V1, "mainnet", SlugMainnet},
-		{V2, "sandbox", CAIP2Devnet},
-		{V2, "mainnet", CAIP2Mainnet},
+		{V1, "sandbox", ClusterDevnet, SlugDevnet},
+		{V1, "mainnet", ClusterMainnet, SlugMainnet},
+		{V2, "sandbox", ClusterDevnet, CAIP2Devnet},
+		{V2, "mainnet", ClusterMainnet, CAIP2Mainnet},
+
+		// A sandbox whose ledger IS testnet says so. Announcing devnet here would hand a client a
+		// transaction built for the wrong chain, and the failure would surface as a signature or
+		// account error rather than as the misdescription it is.
+		{V1, "sandbox", ClusterTestnet, SlugTestnet},
+		{V2, "sandbox", ClusterTestnet, CAIP2Testnet},
+
+		// A local validator matches no public cluster, and is announced as devnet.
+		{V1, "sandbox", "", SlugDevnet},
+		{V2, "sandbox", "", CAIP2Devnet},
+
+		// Mainnet ignores the cluster entirely: there is only one, and a sandbox cluster leaking
+		// into a mainnet offer is the single mistake invariant I8 exists to prevent.
+		{V2, "mainnet", ClusterTestnet, CAIP2Mainnet},
 	} {
-		if got := WireNetwork(netOf(c.net), c.v); got != c.want {
-			t.Errorf("WireNetwork(%s, v%d) = %q, want %q", c.net, c.v, got, c.want)
+		if got := WireNetwork(netOf(c.net), c.v, c.cluster); got != c.want {
+			t.Errorf("WireNetwork(%s, v%d, %q) = %q, want %q", c.net, c.v, c.cluster, got, c.want)
 		}
+	}
+}
+
+// The CAIP-2 identifier for a Solana cluster is `solana:` plus the first 32 characters of its
+// genesis hash, so a ledger can be asked which cluster it is instead of being told.
+func TestClusterFromGenesisReadsTheChain(t *testing.T) {
+	for _, c := range []struct {
+		genesis string
+		want    Cluster
+	}{
+		{"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", ClusterMainnet},
+		{"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG", ClusterDevnet},
+		{"4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY", ClusterTestnet},
+	} {
+		got, ok := ClusterFromGenesis(c.genesis)
+		if !ok || got != c.want {
+			t.Errorf("ClusterFromGenesis(%q) = %q, %v — want %q", c.genesis, got, ok, c.want)
+		}
+	}
+	// A local test validator's genesis matches nothing, and is refused rather than guessed at.
+	if _, ok := ClusterFromGenesis("C27A73Lo8hztJkNoq4JZq1ieLvDrwEf58HL7an7Gaekp"); ok {
+		t.Error("a private ledger was reported as a public cluster")
+	}
+	if _, ok := ClusterFromGenesis("short"); ok {
+		t.Error("a truncated genesis hash was accepted")
 	}
 }
 
@@ -177,7 +218,7 @@ func TestPaymentEnvelopesFromPayKitVectorsParse(t *testing.T) {
 			serverNet, _ := v.Input["x402ServerNetwork"].(string)
 			if accepted && serverNet != "" {
 				cluster, ok := ClusterOf(env.Network)
-				accepted = ok && cluster == serverNet
+				accepted = ok && string(cluster) == serverNet
 			}
 
 			switch outcome {

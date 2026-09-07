@@ -35,6 +35,14 @@ import (
 const (
 	faucetSOL  = uint64(2 * solana.LAMPORTS_PER_SOL)
 	faucetUSDC = 100 * money.One
+
+	// faucetSOLFloor is what a wallet must already hold for a refused airdrop to be survivable.
+	//
+	// A local validator airdrops freely; devnet's faucet is rate limited and frequently dry, so on
+	// a public sandbox the request WILL be refused sometimes. A refusal is only a failure if the
+	// wallet cannot pay for what comes next — and 0.05 SOL is hundreds of signatures, far more
+	// than the wizard's delegation and its payments need.
+	faucetSOLFloor = uint64(solana.LAMPORTS_PER_SOL / 20)
 )
 
 func (ix *Indexer) faucet(c *gin.Context) {
@@ -98,11 +106,8 @@ func (ix *Indexer) grant(ctx context.Context, owner solana.PublicKey) error {
 
 	// SOL first: without it the owner cannot pay the fee on the delegation, and a wallet holding
 	// USDC it cannot move is a worse experience than one holding nothing.
-	if _, err := rpc.Do(ctx, ix.pool, network.Sandbox,
-		func(cl *solrpc.Client) (solana.Signature, error) {
-			return cl.RequestAirdrop(ctx, owner, faucetSOL, solrpc.CommitmentConfirmed)
-		}); err != nil {
-		return fmt.Errorf("airdrop: %w", err)
+	if err := ix.airdrop(ctx, owner); err != nil {
+		return err
 	}
 
 	ataAddr, _, err := solana.FindAssociatedTokenAddress(owner, mint)
@@ -171,6 +176,51 @@ func (ix *Indexer) grant(ctx context.Context, owner solana.PublicKey) error {
 		}
 	}
 	return fmt.Errorf("the faucet transfer did not confirm within 45s")
+}
+
+// airdrop tops the owner's wallet up with SOL, and settles for what it already holds when the
+// network refuses.
+//
+// The same judgement `leashctl bootstrap` makes, for the same reason: the sandbox ledger may be a
+// local validator, which airdrops on demand, or devnet, whose faucet is rate limited and often dry
+// (https://faucet.solana.com). Treating every refusal as a failure would make the faucet unusable
+// on devnet for a wallet that is already perfectly able to transact — so the question asked is not
+// "did the airdrop succeed" but "can this wallet pay its way", which is the one that matters.
+//
+// It fails only when both are false, and then it says the address and the amount, because "airdrop
+// failed" leaves an owner guessing and "send SOL to this address" does not.
+func (ix *Indexer) airdrop(ctx context.Context, owner solana.PublicKey) error {
+	balance := func() uint64 {
+		out, err := rpc.Do(ctx, ix.pool, network.Sandbox,
+			func(cl *solrpc.Client) (*solrpc.GetBalanceResult, error) {
+				return cl.GetBalance(ctx, owner, solrpc.CommitmentConfirmed)
+			})
+		if err != nil || out == nil {
+			return 0
+		}
+		return out.Value
+	}
+
+	// Already comfortable: asking anyway spends a rate limit that another owner needs.
+	if balance() >= faucetSOL {
+		return nil
+	}
+
+	_, err := rpc.Do(ctx, ix.pool, network.Sandbox,
+		func(cl *solrpc.Client) (solana.Signature, error) {
+			return cl.RequestAirdrop(ctx, owner, faucetSOL, solrpc.CommitmentConfirmed)
+		})
+	if err == nil {
+		return nil
+	}
+	if balance() >= faucetSOLFloor {
+		return nil
+	}
+	return fmt.Errorf("this network will not fund %s, and it holds almost nothing. A local "+
+		"validator airdrops freely; a public one does not — send at least %.2f SOL to that "+
+		"address (https://faucet.solana.com on devnet) and try again. The test USDC is minted by "+
+		"this faucet and does not depend on it. (airdrop: %v)",
+		owner, float64(faucetSOLFloor)/float64(solana.LAMPORTS_PER_SOL), err)
 }
 
 // mintAuthority reads the key `leashctl bootstrap` created. It is the sandbox's mint authority and

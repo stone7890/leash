@@ -49,33 +49,164 @@ signer and stream paths first and never forwards them to Next at all.
 ## Running the sandbox on devnet or testnet
 
 The sandbox normally points at the local validator, where the ledger is ours. Pointing it at a
-public cluster instead is two variables and one manual step:
+public cluster instead is one command. Devnet and testnet are both first class and entirely
+independent — running one does not disturb the other:
 
 ```
-RPC_SANDBOX_URL=https://api.devnet.solana.com
-RPC_SANDBOX_FALLBACK_URL=https://api.testnet.solana.com
+make devnet          make testnet          # the stack
+make devnet-keys     make testnet-keys     # the one address to fund, and what it holds
+make devnet-faucet   make testnet-faucet   # ask the cluster for that SOL
+make devnet-demo     make testnet-demo     # the end-to-end demo against it
 ```
+
+**The target sets the endpoint**, rather than asking anyone to edit `.env` first. That is what
+makes the name the truth: `make devnet` cannot quietly run against testnet because a file said so.
+`RPC_SANDBOX_URL` in `.env` is then only the local default, for `make start` and `make dev`, and
+`make start` refuses to run if it has been pointed somewhere public — a local validator nothing
+talks to is a stack that looks local and settles elsewhere.
+
+**Each cluster keeps its own state volume and database** (`leash_state_devnet`, `leash_devnet`).
+The keys and the recorded mint only mean anything on the ledger they were made against, so sharing
+them would mean a mint absent after every switch, a fresh one created in its place, and a database
+still describing the old — an agent meeting a mint it was not created against and being refused
+with `UNSUPPORTED_TERMS`. Correct behaviour, arrived at confusingly. It is the same split
+`make dev` already makes, and it has a second benefit: each cluster's treasury stays funded across
+switches.
+
+`make clean` therefore does **not** destroy them, and says so. Those volumes hold keys a
+rate-limited faucet was talked into funding, which can be a day's work to replace; destroying them
+as a side effect of clearing a local sandbox would be the most expensive possible reading of
+"clean". `make clean-clusters` is the deliberate version.
+
+Both targets layer `docker-compose.public.yml` on top of the usual file. That overlay does two
+things and no more: it stops the local validator from starting, and it drops the `depends_on` that
+made `bootstrap` wait for it. It names no cluster, because it has nothing cluster-specific in it —
+every service already reads `RPC_SANDBOX_URL`, so the endpoint alone decides, exactly as I8
+requires. A hosted provider is the same shape: set `RPC_SANDBOX_URL` and use `make start`'s
+overlay, or add a line to `CLUSTER_RPC_*` in the Makefile.
+
+```
+RPC_SANDBOX_FALLBACK_URL=            # a SECOND endpoint on the SAME cluster, if you have one
+```
+
+**A public cluster's faucet answers 429 once the day's allowance is gone**, per address and per
+IP, on testnet as on devnet. That is the expected answer, not a fault, so bootstrap reports it in
+one line rather than dumping the RPC error — `solana-go` renders an `RPCError` as a spew dump of
+the struct, which makes a routine rate limit look like a panic.
+
+`make <cluster>-faucet` is the one step of bootstrap worth retrying on its own: re-running all of
+bootstrap to retry a single airdrop means waiting through the migrations and a mint check to learn
+whether the faucet's mood has changed.
+
+```
+make devnet-faucet                                       top the treasury up
+make devnet-faucet ADDRESS=<pubkey>                      fund some other wallet
+make devnet-faucet ADDRESS=<pubkey> SOL=0.05 USDC=100    amounts, explicitly
+```
+
+The SOL and the test USDC come from different places and fail differently, which is why they are
+reported separately. The SOL is the *cluster's*, handed out by a faucet that may refuse. The USDC
+is *ours*, minted by the authority bootstrap created — it cannot be rate limited and works on any
+cluster, which is the whole reason the sandbox does not depend on a published test token. Minting
+needs a prepared sandbox; topping up the treasury does not.
+
+All three commands agree on how much the treasury needs, because they call the same function: a
+faucet that topped up to less than bootstrap requires would send somebody round the loop again for
+no reason they could see.
+
+**Do not `make clean` while waiting to fund.** The keys live in the `leashstate` volume and
+`make clean` destroys it, so the next run generates a different treasury address and any SOL sent
+to the old one is stranded. Fund, then run again.
+
+**The offers name the real cluster.** `leash-demo402` asks the chain for its genesis hash at boot
+and derives the cluster from it — Solana's CAIP-2 identifier is `solana:` plus the first 32
+characters of that hash, so the chain identifies itself and no variable can be set wrongly. A
+sandbox on testnet publishes `solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z`; one on a local validator,
+whose genesis matches no public cluster, publishes devnet's, because a private ledger has no
+identifier any client could act on.
+
+**On the v1 wire, testnet is where Leash departs from the reference producer.** That producer maps
+devnet-family to `solana-devnet` and *everything else* to `solana` — so a v1 offer from a testnet
+server announces itself as **mainnet**. Leash emits `solana-testnet`, which the same implementation
+recognises on parse. Saying the true thing costs nothing; saying the reference thing would be
+dangerous.
+
+**The fallback must be the same ledger.** `RPC_SANDBOX_FALLBACK_URL` is a second endpoint onto the
+network the primary serves — another devnet provider. Testnet is not devnet's understudy: it is a
+different ledger, where the sandbox mint does not exist, so failing over to it would turn every
+read into an account-not-found and every write into a failure naming the wrong cause.
+
+**Switching an existing stack between chains loses its records.** The keys survive — `bootstrap`
+reuses everything in the state directory — but the mint does not: `bootstrap` reads the recorded
+mint back from the chain, finds it absent, says so, and creates a fresh one. Agents and allowances
+already in MongoDB still refer to the old mint and are dead. `make clean` destroys the database,
+the ledger and the state together, which is the only coherent way to start over.
 
 **`bootstrap` cannot fund itself there.** A local validator airdrops on request; devnet's faucet
-is rate limited per IP and frequently exhausted, and mainnet has none at all. So `bootstrap`
-attempts all three keys, then stops and prints every address it could not fund, with the amount:
+is rate limited per IP *and* per address, and frequently exhausted. So `bootstrap` asks, and when
+it is refused it stops and names **one** address:
 
 ```
-this network will not fund 3 of the keys this sandbox needs, and they hold nothing.
+this network will not fund the sandbox, and its treasury holds 0.0000 SOL.
 
-    send at least 2.00 SOL to  Ghpz…4gQ5   (mint authority)
-    send at least 2.00 SOL to  6Xne…jWBh   (faucet)
-    send at least 2.00 SOL to  HBXY…ZiVJ   (sample endpoint's facilitator)
+    send at least 0.40 SOL to  5b8SxVYtRBATr6QKxbxK6Qm8dTqSZvbcuJDqQ9dbQ1Mt
 ```
 
-All three at once, deliberately — the same reason the configuration loader names every missing
-variable at once, except that here each extra round trip also costs a rate-limited faucet. The
-keys are already written to the state directory before it stops, so fund them from
-<https://faucet.solana.com> or any funded wallet and run `bootstrap` again: it is idempotent, sees
-the balances, and carries on to the mint.
+One, because the mint authority is the sandbox's **treasury** and bootstrap pays the other keys
+from it. That is not an arbitrary choice: it is the key that must hold SOL under every
+circumstance — rent on the mint, rent on each token account, the fee on every faucet grant — so it
+needs funding whatever else happens, and the others can be paid out of it.
+
+On a local validator this changes nothing; both shapes work. On devnet it is the whole experience,
+because three addresses means three individually-refusable faucet requests spread over a day
+before anything runs.
+
+The **faucet key is not funded at all**. It is created and published in `sandbox.json`, but nothing
+ever signs with it — the in-app faucet mints with the mint authority. The demo endpoint's recipient
+is not funded either; it only receives.
+
+`BOOTSTRAP_FUND_SOL` lowers the per-key target from its default of 2. Devnet's allowance is real
+and rate limited, and a sandbox that creates one mint, one token account and a handful of transfers
+needs a fraction of it:
+
+```
+BOOTSTRAP_FUND_SOL=0.2 make devnet
+```
+
+`make devnet-keys` answers the same question at any time, so the address never has to be
+recovered from the scrollback of the run that failed:
+
+```
+  state  not prepared — bootstrap has not made a mint here yet
+
+  mint authority (treasury)       5b8S…Q1Mt   0.0000 SOL  NEEDS FUNDING
+  faucet                          BVT8…2C2X   0.0000 SOL  never signs anything — never needs SOL
+  sample endpoint's facilitator   6dbZ…T1c1   0.0000 SOL  paid from the treasury
+  demo endpoint's recipient       Ebxr…zhhw   0.0000 SOL  receives only — never needs SOL
+```
+
+It asks bootstrap's question rather than an approximation of it: it reads the recorded mint back
+from the chain to decide whether the sandbox is *prepared*, and the threshold changes with the
+answer. Before, the treasury needs its target plus whatever the facilitator is short. After, it
+needs only fee money — a prepared sandbox sits below its funding target, because it has just paid
+rent on a mint, and reporting that as broken would be worse than not reporting at all.
+
+The keys are written to the state directory before bootstrap stops, so fund the address from
+<https://faucet.solana.com> or any funded wallet and run it again: it is idempotent, sees the
+balance, pays the facilitator, and carries on to the mint.
 
 Once funded, everything else is unchanged — the CAIP-2 identifier for the sandbox is devnet's, so
 the x402 wire format is already correct.
+
+**The in-app faucet makes the same judgement.** It asks devnet for SOL, and when that is refused it
+checks what the wallet already holds: 0.05 SOL is hundreds of signatures, far more than the wizard
+needs, so a refused airdrop is not by itself a failure. The 100 test USDC never depended on the
+public faucet at all — it is minted by the authority `bootstrap` created, on a mint we own. It
+fails, naming the address and the amount, only when the wallet is genuinely unable to pay its way.
+
+`FAUCET_PER_WALLET_PER_HOUR` is the limit behind *"the faucet has already funded this wallet
+recently"* (429). It is a cost limit, not a safety one — the sandbox is play money by design — and
+raising it costs nothing on a mint we own.
 
 ### What the read paths are tested against
 
@@ -115,7 +246,8 @@ from failing fast.
 | `INDEXER_BASE_URL` | web | The proxy target for the SSE stream, read **per request** |
 | `TELEGRAM_BOT_TOKEN` | indexer | Required **only if** `ALERTS_ENABLED` |
 | `ALLOWED_ORIGINS` | web | |
-| `FAUCET_PER_WALLET_PER_HOUR` | web, indexer | Default 1 |
+| `BOOTSTRAP_FUND_SOL` | leashctl | Default 2. SOL wanted in each sandbox key |
+| `FAUCET_PER_WALLET_PER_HOUR` | web, indexer | Default 1. The 429 on the sandbox faucet |
 | `LOG_LEVEL` | all | Default `info` |
 
 ### There is no `RPC_URL`

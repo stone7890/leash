@@ -56,6 +56,12 @@ inventing it in code.
 | 15 | [15-roadmap.md](15-roadmap.md) | The four weeks, the definition of done, the reject-merge-if list |
 | 16 | [16-deck-conformance.md](16-deck-conformance.md) | **The audit record** — the deck line by line against what we build |
 
+One directory sits alongside the numbering:
+
+- [flows/](flows/) — **every flow in the system, drawn.** Mermaid diagrams for P1–P6 plus the
+  lanes, the policy engine, the three state machines and the four reconciliation loops. They use
+  the same N-xx step numbers as the deck and as [09-flows.md](09-flows.md), which stays the prose.
+
 One more file sits outside the numbering:
 
 - [if-leash-is-down.md](if-leash-is-down.md) — the public, self-serve revoke guide. It exists

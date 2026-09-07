@@ -64,22 +64,30 @@ func cmdDemo(ctx context.Context, args []string) error {
 	defer cancel()
 	now := time.Now().UTC()
 
-	step(1, "a brand-new owner wallet")
-	owner := solana.NewWallet()
-	fmt.Printf("     %s\n", owner.PublicKey())
-	if err := fundAll(c, client, []funding{
-		{"the owner wallet", owner.PublicKey(), 1 * solana.LAMPORTS_PER_SOL},
-	}); err != nil {
-		return err
-	}
-
 	authority, err := loadOrCreateKey(filepath.Join(dir, keyMint))
 	if err != nil {
 		return err
 	}
+
+	step(1, "a brand-new owner wallet")
+	owner := solana.NewWallet()
+	fmt.Printf("     %s\n", owner.PublicKey())
+	// Through the treasury, like everything else on a public network: a wallet created one line
+	// ago holds nothing, and devnet will not airdrop to it. A tenth of a SOL is thousands of
+	// signatures — this wallet creates one token account, approves one delegation, and makes a
+	// handful of payments.
+	reserve, err := fundingTarget()
+	if err != nil {
+		return err
+	}
+	if err := fundSandbox(c, client, authority, []funding{
+		{"the owner wallet", owner.PublicKey(), solana.LAMPORTS_PER_SOL / 10},
+	}, reserve); err != nil {
+		return err
+	}
 	mint := solana.MustPublicKeyFromBase58(sb.Mint)
 
-	ownerATA, err := fundOwnerWithUSDC(c, client, authority, owner, mint, 100*money.One)
+	ownerATA, err := fundWithUSDC(c, client, authority, owner.PublicKey(), mint, 100*money.One)
 	if err != nil {
 		return err
 	}
@@ -348,16 +356,16 @@ func short(s string) string {
 // The associated one specifically: BuildCreate transfers the cap from there, because that is where
 // a wallet puts a user's USDC and therefore where an owner's balance actually lives. Funding some
 // other account would leave the demo working against a balance no real wallet would show.
-func fundOwnerWithUSDC(ctx context.Context, c *solrpc.Client, authority, owner *solana.Wallet,
-	mint solana.PublicKey, amount money.Base) (solana.PublicKey, error) {
-	ataAddr, _, err := solana.FindAssociatedTokenAddress(owner.PublicKey(), mint)
+func fundWithUSDC(ctx context.Context, c *solrpc.Client, authority *solana.Wallet,
+	owner solana.PublicKey, mint solana.PublicKey, amount money.Base) (solana.PublicKey, error) {
+	ataAddr, _, err := solana.FindAssociatedTokenAddress(owner, mint)
 	if err != nil {
 		return solana.PublicKey{}, err
 	}
 	if err := submit(ctx, c, []solana.Instruction{
 		// Idempotent: a second demo run against the same wallet must not fail because the account
 		// already exists.
-		ata.NewCreateIdempotentInstruction(authority.PublicKey(), owner.PublicKey(), mint).Build(),
+		ata.NewCreateIdempotentInstruction(authority.PublicKey(), owner, mint).Build(),
 		token.NewMintToInstruction(uint64(amount), mint, ataAddr,
 			authority.PublicKey(), nil).Build(),
 	}, authority); err != nil {

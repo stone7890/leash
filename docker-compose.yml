@@ -15,10 +15,19 @@
 #   mongo      a SINGLE-NODE REPLICA SET, never a standalone. Multi-document transactions and
 #              change streams both require one, and both are load-bearing — the kill switch's
 #              "instantly" is a change stream.
-#   validator  a local Solana test validator. This is the sandbox: real chain, real signatures,
-#              real read-back, and no dependency on a public network being up. The specification's
-#              sandbox-first design wants exactly this, and its open question [Q5] — whether to use
-#              a hosted test network — becomes a configuration change rather than a rewrite.
+#   validator  a local Solana test validator. This is the sandbox by default: real chain, real
+#              signatures, real read-back, and no dependency on a public network being up.
+#
+# The specification's open question [Q5] — whether to use a hosted test network — is answered by
+# configuration, not by a rewrite. RPC_SANDBOX_URL is what every service reads, and the local
+# validator is only its default:
+#
+#   make start            the sandbox on the local validator
+#   make testnet          the sandbox on a public cluster (docker-compose.public.yml)
+#
+# Nothing about I8 changes either way. `sandbox` is still a network in its own right, still
+# isolated from `mainnet`, and still chosen per record — the cluster is merely where its ledger
+# lives, and the x402 offers name whichever one the chain says it is.
 
 services:
   nginx:
@@ -92,7 +101,7 @@ services:
     env_file: [.env]
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
-      RPC_SANDBOX_URL: "http://validator:8899"
+      RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       LEASH_STATE_DIR: /state
     volumes:
       - leashstate:/state
@@ -107,7 +116,7 @@ services:
     env_file: [.env]
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
-      RPC_SANDBOX_URL: "http://validator:8899"
+      RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       LEASH_STATE_DIR: /state
     volumes:
       - leashstate:/state:ro
@@ -122,7 +131,7 @@ services:
     env_file: [.env]
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
-      RPC_SANDBOX_URL: "http://validator:8899"
+      RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       DEMO_ENDPOINT_URL: "http://demo402:4200"
       SIGNER_BASE_URL: "http://signer:4100"
       LEASH_STATE_DIR: /state
@@ -139,7 +148,7 @@ services:
     env_file: [.env]
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
-      RPC_SANDBOX_URL: "http://validator:8899"
+      RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       LEASH_STATE_DIR: /state
       # The sample endpoint is a sandbox fixture. It refuses to boot with mainnet configured.
       NETWORKS: sandbox
@@ -155,7 +164,7 @@ services:
     env_file: [.env]
     environment:
       MONGO_URI: "mongodb://mongo:27017/${MONGO_DB:-leash}?replicaSet=rs0&directConnection=true"
-      RPC_SANDBOX_URL: "http://validator:8899"
+      RPC_SANDBOX_URL: "${RPC_SANDBOX_URL:-http://validator:8899}"
       SIGNER_BASE_URL: "http://signer:4100"
       INDEXER_BASE_URL: "http://indexer:4300"
       LEASH_STATE_DIR: /state
@@ -168,5 +177,12 @@ services:
 
 volumes:
   mongodata:
-  leashstate:
   ledger:
+  # Named explicitly so a cluster can have its own. The sandbox's keys and the mint it recorded
+  # only mean anything on the ledger they were made against — sharing one volume between devnet
+  # and testnet would leave the recorded mint absent on every switch, and a fresh one created in
+  # its place while the database still referred to the old. Same reasoning as the separate
+  # database `make dev` uses. The default is the name compose already gave it, so an existing
+  # deployment keeps the volume it has.
+  leashstate:
+    name: ${STATE_VOLUME:-leash_leashstate}

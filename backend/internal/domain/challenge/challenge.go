@@ -212,7 +212,7 @@ func (c Challenge) Canonical() string {
 	// The cluster, not the wire form: the same offer sent as v1 `solana-devnet` and as v2 CAIP-2
 	// is the same payment, and must not hash two ways.
 	cluster, _ := ClusterOf(c.Offer.Network)
-	b.WriteString(cluster)
+	b.WriteString(string(cluster))
 	b.WriteString("\npay_to=")
 	b.WriteString(c.PayTo)
 	b.WriteString("\nasset=")

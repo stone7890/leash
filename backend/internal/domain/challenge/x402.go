@@ -52,38 +52,88 @@ const (
 	SlugTestnet = "solana-testnet"
 )
 
+// Cluster is the Solana cluster a Leash network's ledger actually lives on.
+//
+// It is not a fourth Leash network. Leash has two — sandbox and mainnet, invariant I8 — and this
+// says which public ledger the SANDBOX's happens to be, so the x402 wire can name it correctly.
+// A sandbox on devnet and a sandbox on testnet are the same Leash network with the same test_
+// prefixes; they differ only in what an interoperating client must be told to build against.
+type Cluster string
+
+const (
+	ClusterMainnet Cluster = "mainnet-beta"
+	ClusterDevnet  Cluster = "devnet"
+	ClusterTestnet Cluster = "testnet"
+)
+
+// ClusterFromGenesis names a cluster by asking the ledger which one it is.
+//
+// Solana's CAIP-2 identifier is `solana:` followed by the first 32 characters of the genesis hash,
+// so the constants above are not a lookup table maintained alongside the truth — they ARE the
+// truth, and one `getGenesisHash` decides the matter. This is the same read-back discipline as
+// everywhere else: trust what the chain says, not what somebody configured.
+//
+// A local test validator has its own genesis and matches nothing, which is correct and is why the
+// second return value exists. The caller decides what to do about that; there is no sensible
+// "guess" available here.
+func ClusterFromGenesis(genesis string) (Cluster, bool) {
+	g := strings.TrimSpace(genesis)
+	if len(g) < 32 {
+		return "", false
+	}
+	return ClusterOf("solana:" + g[:32])
+}
+
 // ClusterOf maps either wire form of a network onto the cluster it names.
 //
 // Both forms must be understood: a v1 peer sends `solana-devnet`, a v2 peer sends the CAIP-2
 // identifier, and the same cluster is meant. Normalising on the way in is what lets rule S0
 // compare a challenge's network against an agent's without caring which version produced it.
-func ClusterOf(wire string) (string, bool) {
+func ClusterOf(wire string) (Cluster, bool) {
 	switch strings.TrimSpace(wire) {
 	case SlugMainnet, CAIP2Mainnet:
-		return "mainnet-beta", true
+		return ClusterMainnet, true
 	case SlugDevnet, CAIP2Devnet:
-		return "devnet", true
+		return ClusterDevnet, true
 	case SlugTestnet, CAIP2Testnet:
-		return "testnet", true
+		return ClusterTestnet, true
 	}
 	return "", false
 }
 
 // WireNetwork renders a Leash network in the form the given protocol version uses.
 //
-// Leash's own `sandbox` is a Solana test cluster, so it goes out as devnet's identifier — the
-// protocol has no concept of "somebody's private sandbox", and inventing one would produce a
-// challenge no other implementation could read.
-func WireNetwork(n network.Network, v Version) string {
-	mainnet := n == network.Mainnet
-	if v == V1 {
-		if mainnet {
+// The protocol has no concept of "somebody's private sandbox", so the sandbox must go out as the
+// public cluster its ledger actually is — which is why the cluster is an argument rather than a
+// constant. Naming devnet while settling on testnet would hand every interoperating client a
+// transaction it cannot build, and every mismatch would be reported as a network error rather than
+// as the lie it is.
+//
+// A cluster that is not a public one — a local validator, whose genesis matches nothing — comes
+// through as devnet. That is the honest choice among bad ones: devnet is the cluster x402
+// implementations treat as "the test one", and a private ledger has no identifier of its own that
+// anybody could act on.
+//
+// On the v1 wire testnet goes out as `solana-testnet`, which is a deliberate departure from the
+// reference producer. That producer maps devnet-family to `solana-devnet` and EVERYTHING ELSE to
+// `solana` (contracts/x402/exact-v1-spec.md), so a v1 offer from a testnet server would announce
+// itself as mainnet. `solana-testnet` is recognised on parse by the same implementation, so saying
+// the true thing costs nothing and saying the reference thing would be dangerous.
+func WireNetwork(n network.Network, v Version, c Cluster) string {
+	if n == network.Mainnet {
+		if v == V1 {
 			return SlugMainnet
 		}
-		return SlugDevnet
-	}
-	if mainnet {
 		return CAIP2Mainnet
+	}
+	if c == ClusterTestnet {
+		if v == V1 {
+			return SlugTestnet
+		}
+		return CAIP2Testnet
+	}
+	if v == V1 {
+		return SlugDevnet
 	}
 	return CAIP2Devnet
 }
@@ -224,7 +274,10 @@ func (c Challenge) Credential(transactionBase64 string) (string, error) {
 	}
 	if c.Version == V1 {
 		env.Scheme = c.Scheme
-		env.Network = WireNetwork(c.Network, V1)
+		// The cluster comes from the OFFER, not from an assumption: this credential answers a
+		// specific server, and the only cluster that can be right is the one it named.
+		cluster, _ := ClusterOf(c.Offer.Network)
+		env.Network = WireNetwork(c.Network, V1, cluster)
 	} else {
 		// The offer, echoed verbatim. The server compares it against its own route, so anything
 		// we alter here is a mismatch we caused.

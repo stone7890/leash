@@ -3,6 +3,9 @@
 Six phases, P1 to P6. The step numbers — N-01 and so on — are the deck's, and they are kept so
 that a conversation about "N-12" means the same thing here, in the deck, and in a pull request.
 
+**The diagrams live in [flows/](flows/)**, one file per phase, using these same step numbers. This
+chapter is the prose; that directory is the picture.
+
 ## The happy path, end to end
 
 | # | Milestone | Steps | Who |
